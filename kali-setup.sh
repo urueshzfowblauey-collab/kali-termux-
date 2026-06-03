@@ -542,12 +542,11 @@ auto_install() {
     check_arch
     check_space
     choose_rootfs
-    install_deps
     update_termux
+    install_deps
 
     local rootfs_dest="${HOME}/${ROOTFS_FILE}"
 
-    echo -e "${Y}[→] Verification disponibilite du rootfs...${N}"
     echo -e "${Y}[→] Verification disponibilite du rootfs...${N}"
     local active_url=""
     if curl -fsI --max-time 15 "${ROOTFS_URL}" > /dev/null 2>&1; then
