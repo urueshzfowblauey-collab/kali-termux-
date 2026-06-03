@@ -14,6 +14,8 @@ LOCK_FILE="${HOME}/.kali-setup.lock"
 ROOTFS_URL_BASE="https://kali.download/nethunter-images/current/rootfs"
 ROOTFS_URL_FALLBACK="https://old.kali.org/nethunter-images/kali-2024.2/rootfs"
 
+exec 3</dev/tty
+
 trap 'handle_exit $?' EXIT
 trap 'echo -e "\n${R}[!] Interruption${N}"; exit 130' INT TERM
 
@@ -38,23 +40,25 @@ need_cmd() {
 show_banner() {
     clear
     echo -e "${G}"
-    echo "⠀⠀⠀⠀⠠⠤⠤⠤⠤⠤⣤⣤⣤⣄⣀⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠛⠛⠿⢶⣤⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⢀⣀⣀⣠⣤⣤⣴⠶⠶⠶⠶⠶⠶⠶⠶⠶⠿⠿⢿⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠚⠛⠉⠉⠉⠀⠀⠀⠀⠀⠀⢀⣀⣀⣤⡴⠶⠶⠿⠿⠿⣧⡀⠀⠀⠀⠤⢄⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⢀⣠⡴⠞⠛⠉⠁⠀⠀⠀⠀⠀⠀⠀⢸⣿⣷⣶⣦⣤⣄⣈⡑⢦⣀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⣠⠔⠚⠉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣾⡿⠟⠉⠉⠉⠉⠙⠛⠿⣿⣮⣷⣤⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣿⡿⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⢻⣯⣧⡀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠻⢷⡤⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⢿⣿⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠻⣿⣦⣤⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠙⠛⠛⠻⠿⠿⣿⣶⣶⣦⣄⣀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠻⣿⣯⡛⠻⢦⡀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠙⢿⣆⠀⠙⢆⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⢻⣆⠀⠈⢣"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠻⡆⠀⠈"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢻⡀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠃⠀"
+    cat << 'EOF'
+⠀⠀⠀⠀⠠⠤⠤⠤⠤⠤⣤⣤⣤⣄⣀⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠛⠛⠿⢶⣤⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⢀⣀⣀⣠⣤⣤⣴⠶⠶⠶⠶⠶⠶⠶⠶⠶⠿⠿⢿⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠚⠛⠉⠉⠉⠀⠀⠀⠀⠀⠀⢀⣀⣀⣤⡴⠶⠶⠿⠿⠿⣧⡀⠀⠀⠀⠤⢄⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⢀⣠⡴⠞⠛⠉⠁⠀⠀⠀⠀⠀⠀⠀⢸⣿⣷⣶⣦⣤⣄⣈⡑⢦⣀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⣠⠔⠚⠉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣾⡿⠟⠉⠉⠉⠉⠙⠛⠿⣿⣮⣷⣤⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣿⡿⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⢻⣯⣧⡀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠻⢷⡤⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⢿⣿⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠻⣿⣦⣤⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠙⠛⠛⠻⠿⠿⣿⣶⣶⣦⣄⣀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠻⣿⣯⡛⠻⢦⡀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠙⢿⣆⠀⠙⢆⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⢻⣆⠀⠈⢣
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠻⡆⠀⠈
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢻⡀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠃⠀
+EOF
     echo -e "${N}"
     echo -e "${R}╔══════════════════════════════════════════╗"
     echo -e "║           KALI LINUX - TERMUX            ║"
@@ -115,11 +119,12 @@ real_progress() {
     while kill -0 "$pid" 2>/dev/null; do
         local c="${chars:$((i % ${#chars})):1}"
         printf "\r${Y}  %s %s ...${N}" "$c" "$label"
-        read -r -t 0.1 _ 2>/dev/null || true
-        ((i++)) || true
+        sleep 0.1
+        i=$((i + 1))
     done
-    wait "$pid"
+    wait "$pid" 2>/dev/null
     local exit_code=$?
+    [ "$exit_code" -eq 127 ] && exit_code=0
     if [ "$exit_code" -eq 0 ]; then
         printf "\r${G}  [✓] %s${N}\n" "$label"
     else
@@ -176,7 +181,7 @@ choose_rootfs() {
     echo ""
     local choice
     while true; do
-        read -r -p "$(echo -e "${C}Choix [1-3]: ${N}")" choice
+        read -r -p "$(echo -e "${C}Choix [1-3]: ${N}")" choice <&3
         case "$choice" in
             1) ROOTFS_TYPE="nano";    break ;;
             2) ROOTFS_TYPE="minimal"; break ;;
@@ -222,7 +227,7 @@ verify_sha256() {
 
 update_termux() {
     local conf
-    read -r -p "$(echo -e "${C}[?] Mettre a jour Termux avant installation ? (oui/non): ${N}")" conf
+    read -r -p "$(echo -e "${C}[?] Mettre a jour Termux avant installation ? (oui/non): ${N}")" conf <&3
     if [ "${conf}" != "oui" ]; then
         log "Mise a jour Termux: ignoree"
         return 0
@@ -345,11 +350,11 @@ restore_snapshot() {
     while IFS= read -r -d '' f; do
         snaps+=("$f")
         echo -e "${C}[$i]${W} $(basename "$f")"
-        ((i++)) || true
+        i=$((i + 1))
     done < <(find "${snap_dir}" -name "snap-*.tar.gz" -print0 | sort -z)
     echo ""
     local choice
-    read -r -p "$(echo -e "${C}Numero de snapshot: ${N}")" choice
+    read -r -p "$(echo -e "${C}Numero de snapshot: ${N}")" choice <&3
     if [ -z "${snaps[$((choice-1))]+x}" ]; then
         echo -e "${R}[-] Choix invalide${N}"; sleep 2; return
     fi
@@ -359,7 +364,7 @@ restore_snapshot() {
         die "Archive corrompue — restauration annulee"
     fi
     local conf
-    read -r -p "$(echo -e "${R}[!] Cette action ecrase kali-fs. Continuer ? (oui/non): ${N}")" conf
+    read -r -p "$(echo -e "${R}[!] Cette action ecrase kali-fs. Continuer ? (oui/non): ${N}")" conf <&3
     [ "${conf}" = "oui" ] || { echo -e "${Y}[!] Annule${N}"; sleep 1; return; }
     echo -e "${Y}[→] Restauration...${N}"
     (tar -xzf "${selected}" -C "${HOME}" 2>/dev/null) &
@@ -392,7 +397,7 @@ backup_kali() {
 
 restore_kali() {
     local backup_file
-    read -r -p "$(echo -e "${C}Chemin du backup: ${N}")" backup_file
+    read -r -p "$(echo -e "${C}Chemin du backup: ${N}")" backup_file <&3
     if [ ! -f "${backup_file}" ]; then
         echo -e "${R}[-] Fichier introuvable: ${backup_file}${N}"
         sleep 2; return
@@ -402,7 +407,7 @@ restore_kali() {
         die "Archive corrompue — restauration annulee"
     fi
     local conf
-    read -r -p "$(echo -e "${R}[!] Cette action ecrase kali-fs. Continuer ? (oui/non): ${N}")" conf
+    read -r -p "$(echo -e "${R}[!] Cette action ecrase kali-fs. Continuer ? (oui/non): ${N}")" conf <&3
     [ "${conf}" = "oui" ] || { echo -e "${Y}[!] Annule${N}"; sleep 1; return; }
     echo -e "${Y}[→] Restauration...${N}"
     (tar -xzf "${backup_file}" -C "${HOME}" 2>/dev/null) &
@@ -442,14 +447,14 @@ install_tools() {
 uninstall_kali() {
     show_banner
     local conf
-    read -r -p "$(echo -e "${R}[!] Confirmer la desinstallation ? (oui/non): ${N}")" conf
+    read -r -p "$(echo -e "${R}[!] Confirmer la desinstallation ? (oui/non): ${N}")" conf <&3
     if [ "${conf}" = "oui" ]; then
         rm -rf "${KALI_FS}"
         rm -f "${PREFIX}/bin/kali" "${PREFIX}/bin/kali-setup"
         echo -e "${G}[✓] Kali desinstalle${N}"
         log "Kali desinstalle"
         sleep 2
-        menu_install
+        exec "$0"
     fi
 }
 
@@ -476,7 +481,7 @@ menu_post() {
         echo -e "${C}[8]${W} Desinstaller Kali"
         echo -e "${C}[9]${W} Quitter"
         echo ""
-        read -r -p "$(echo -e "${C}[?] Choix: ${N}")" choice
+        read -r -p "$(echo -e "${C}[?] Choix: ${N}")" choice <&3
         case "$choice" in
             1) run_kali ;;
             2) update_kali ;;
@@ -502,7 +507,7 @@ menu_install() {
         echo -e "${C}[1]${W} Installation automatique complete"
         echo -e "${C}[2]${W} Quitter"
         echo ""
-        read -r -p "$(echo -e "${C}[?] Choix: ${N}")" choice
+        read -r -p "$(echo -e "${C}[?] Choix: ${N}")" choice <&3
         case "$choice" in
             1) auto_install; break ;;
             2) echo -e "${R}[!] Bye!${N}"; exit 0 ;;
@@ -601,7 +606,6 @@ log "=== kali-setup demarre ==="
 rm -f "${LOCK_FILE}"
 
 intro_animation
-install_kali_setup
 
 if is_installed; then
     echo -e "${G}[✓] Kali Linux detecte${N}"
