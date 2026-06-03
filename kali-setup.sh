@@ -1,4 +1,3 @@
-cat > $PREFIX/bin/kali-setup << 'EOF'
 #!/bin/bash
 R='\033[0;31m'
 G='\033[0;32m'
@@ -30,7 +29,7 @@ echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀�
 echo -e "${N}"
 echo -e "${R}╔══════════════════════════════════════════╗"
 echo -e "║           KALI LINUX - TERMUX            ║"
-echo -e "║         Creator: KYAEV                   ║"
+echo -e "║           Creator: KYAEV                 ║"
 echo -e "╚══════════════════════════════════════════╝${N}"
 echo ""
 }
@@ -58,7 +57,7 @@ check_arch() {
         x86_64)  KARCH="amd64" ;;
         *) echo -e "${R}[-] Architecture non supportée${N}"; exit 1 ;;
     esac
-    echo -e "${G}[✓] Architecture: $ARCH${N}"
+    echo -e "${G}[✓] Architecture: $ARCH ($KARCH)${N}"
 }
 
 check_space() {
@@ -67,13 +66,21 @@ check_space() {
     echo -e "${G}[✓] Espace OK: $(df -h /data | awk 'NR==2{print $4}')${N}"
 }
 
+is_installed() {
+    [ -f "$HOME/kali-fs/bin/bash" ] && return 0
+    return 1
+}
+
 update_kali() {
     show_banner
     echo -e "${Y}[→] Mise à jour Kali...${N}"
-    proot-distro login kali -- bash -c "apt update -y && apt upgrade -y && apt autoremove -y"
+    proot --link2symlink -0 -r $HOME/kali-fs \
+        -b /dev -b /proc -b /sys -b $HOME \
+        /usr/bin/env -i HOME=/root TERM=xterm-256color \
+        PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+        /bin/bash -c "apt update -y && apt upgrade -y && apt autoremove -y"
     echo -e "${G}[✓] Kali à jour${N}"
-    sleep 2
-    menu_post
+    sleep 2; menu_post
 }
 
 backup_kali() {
@@ -81,10 +88,9 @@ backup_kali() {
     BACKUP="$HOME/kali-backup-$(date +%Y%m%d).tar.gz"
     echo -e "${Y}[→] Backup vers $BACKUP...${N}"
     progress_bar 4
-    proot-distro backup kali --output "$BACKUP" 2>/dev/null
-    echo -e "${G}[✓] Backup OK${N}"
-    sleep 2
-    menu_post
+    tar -czf "$BACKUP" -C $HOME kali-fs
+    echo -e "${G}[✓] Backup OK: $BACKUP${N}"
+    sleep 2; menu_post
 }
 
 restore_kali() {
@@ -93,13 +99,12 @@ restore_kali() {
     read BACKUP_FILE
     if [ -f "$BACKUP_FILE" ]; then
         progress_bar 4
-        proot-distro restore "$BACKUP_FILE"
+        tar -xzf "$BACKUP_FILE" -C $HOME
         echo -e "${G}[✓] Restauration OK${N}"
     else
         echo -e "${R}[-] Fichier introuvable${N}"
     fi
-    sleep 2
-    menu_post
+    sleep 2; menu_post
 }
 
 uninstall_kali() {
@@ -107,11 +112,13 @@ uninstall_kali() {
     echo -ne "${R}[!] Confirmer désinstallation ? (o/n): ${N}"
     read CONF
     if [ "$CONF" = "o" ]; then
-        proot-distro remove kali
+        rm -rf $HOME/kali-fs
         rm -f $PREFIX/bin/kali
-        echo -e "${G}[✓] Désinstallé${N}"
+        echo -e "${G}[✓] Kali désinstallé${N}"
+        sleep 2
+        show_banner
+        menu_install
     fi
-    sleep 2
     menu_post
 }
 
@@ -123,26 +130,32 @@ menu_post() {
     echo -e "${C}[1]${W} Lancer Kali Linux"
     echo -e "${C}[2]${W} Mettre à jour Kali"
     echo -e "${C}[3]${W} Installer outils supplémentaires"
-    echo -e "${C}[4]${W} Lancer VNC"
-    echo -e "${C}[5]${W} Backup Kali"
-    echo -e "${C}[6]${W} Restaurer Kali"
-    echo -e "${C}[7]${W} Désinstaller Kali"
-    echo -e "${C}[8]${W} Quitter"
+    echo -e "${C}[4]${W} Backup Kali"
+    echo -e "${C}[5]${W} Restaurer Kali"
+    echo -e "${C}[6]${W} Désinstaller Kali"
+    echo -e "${C}[7]${W} Quitter"
     echo ""
     echo -ne "${C}[?] Choix: ${N}"
     read CHOIX
     case "$CHOIX" in
-        1) proot-distro login kali ;;
+        1) proot --link2symlink -0 -r $HOME/kali-fs \
+               -b /dev -b /proc -b /sys -b $HOME \
+               /usr/bin/env -i HOME=/root TERM=xterm-256color \
+               PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+               /bin/bash --login ;;
         2) update_kali ;;
         3) show_banner
            echo -e "${Y}[→] Installation outils...${N}"
-           proot-distro login kali -- bash -c "apt install -y nmap metasploit-framework hydra sqlmap aircrack-ng"
+           proot --link2symlink -0 -r $HOME/kali-fs \
+               -b /dev -b /proc -b /sys -b $HOME \
+               /usr/bin/env -i HOME=/root TERM=xterm-256color \
+               PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+               /bin/bash -c "apt install -y nmap metasploit-framework hydra sqlmap aircrack-ng"
            sleep 2; menu_post ;;
-        4) proot-distro login kali -- bash -c "start-vnc" ;;
-        5) backup_kali ;;
-        6) restore_kali ;;
-        7) uninstall_kali ;;
-        8) echo -e "${R}[!] Bye!${N}"; exit 0 ;;
+        4) backup_kali ;;
+        5) restore_kali ;;
+        6) uninstall_kali ;;
+        7) echo -e "${R}[!] Bye!${N}"; exit 0 ;;
         *) echo -e "${R}[-] Invalide${N}"; sleep 1; menu_post ;;
     esac
 }
@@ -159,61 +172,54 @@ auto_install() {
     echo -e "${G}[✓] Termux à jour${N}"
 
     echo -e "${Y}[→] Installation dépendances...${N}"
-    pkg install proot-distro wget curl tar bc -y &>/dev/null
+    pkg install proot wget curl tar bc -y &>/dev/null
     echo -e "${G}[✓] Dépendances OK${N}"
 
-    echo -e "${Y}[→] Téléchargement Kali Linux...${N}"
+    echo -e "${Y}[→] Téléchargement Kali Linux ($KARCH)...${N}"
     progress_bar 5
-    proot-distro install kali --override-distro kali
+    wget -q --show-progress \
+        "https://kali.download/nethunter-images/current/rootfs/kali-nethunter-rootfs-minimal-${KARCH}.tar.xz" \
+        -O $HOME/kali.tar.xz
 
-    if ! proot-distro list | grep -q kali; then
-        echo -e "${R}[-] Échec proot-distro, tentative manuelle...${N}"
-        pkg install proot tar wget -y &>/dev/null
-        wget -q --show-progress "https://kali.download/nethunter-images/current/rootfs/kali-nethunter-rootfs-minimal-arm64.tar.xz" -O kali.tar.xz
-        mkdir -p $HOME/kali-fs
-        proot --link2symlink tar -xJf kali.tar.xz -C $HOME/kali-fs
-        rm kali.tar.xz
-        echo 'proot --link2symlink -0 -r $HOME/kali-fs -b /dev -b /proc -b /sys -b $HOME /usr/bin/env -i HOME=/root TERM=xterm-256color PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /bin/bash --login' > $PREFIX/bin/kali
-        chmod +x $PREFIX/bin/kali
-        echo -e "${G}[✓] Kali installé manuellement${N}"
-    else
-        echo 'proot-distro login kali' > $PREFIX/bin/kali
-        chmod +x $PREFIX/bin/kali
-        echo -e "${G}[✓] Raccourci créé${N}"
+    echo -e "${Y}[→] Extraction...${N}"
+    mkdir -p $HOME/kali-fs
+    progress_bar 4
+    proot --link2symlink tar -xJf $HOME/kali.tar.xz -C $HOME/kali-fs
+    rm -f $HOME/kali.tar.xz
+    echo -e "${G}[✓] Kali extrait${N}"
 
-        echo -e "${Y}[→] Outils de base...${N}"
-        progress_bar 3
-        proot-distro login kali -- bash -c "apt update -y &>/dev/null && apt install -y nmap netcat-openbsd curl wget git python3 python3-pip hydra sqlmap &>/dev/null"
-        echo -e "${G}[✓] Outils OK${N}"
+    echo -e "${Y}[→] Création raccourci kali...${N}"
+    cat > $PREFIX/bin/kali << 'KALI'
+#!/bin/bash
+proot --link2symlink -0 -r $HOME/kali-fs \
+    -b /dev -b /proc -b /sys -b $HOME \
+    /usr/bin/env -i HOME=/root TERM=xterm-256color \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    /bin/bash --login
+KALI
+    chmod +x $PREFIX/bin/kali
+    echo -e "${G}[✓] Raccourci créé${N}"
 
-        echo -e "${Y}[→] Configuration VNC...${N}"
-        pkg install tigervnc -y &>/dev/null
-        proot-distro login kali -- bash -c "apt install -y xfce4 xfce4-goodies dbus-x11 &>/dev/null
-echo '#!/bin/bash
-Xvnc :1 -geometry 1280x720 -depth 24 &
-sleep 1
-startxfce4 &' > /usr/local/bin/start-vnc
-chmod +x /usr/local/bin/start-vnc"
-        echo -e "${G}[✓] VNC OK${N}"
-    fi
+    echo -e "${Y}[→] Configuration Kali...${N}"
+    progress_bar 3
+    proot --link2symlink -0 -r $HOME/kali-fs \
+        -b /dev -b /proc -b /sys -b $HOME \
+        /usr/bin/env -i HOME=/root TERM=xterm-256color \
+        PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+        /bin/bash -c "apt update -y &>/dev/null && apt install -y nmap curl wget git python3 python3-pip &>/dev/null"
+    echo -e "${G}[✓] Configuration OK${N}"
 
     show_banner
     echo -e "${G}╔══════════════════════════════════════════╗"
     echo -e "║       INSTALLATION TERMINÉE !            ║"
     echo -e "╚══════════════════════════════════════════╝${N}"
-    echo -e "${W}  Lance Kali:          ${G}kali${N}"
-    echo -e "${W}  Ce menu:             ${G}kali-setup${N}"
-    echo -e "${W}  VNC dans Kali:       ${G}start-vnc${N}"
+    echo -e "${W}  Lance Kali:     ${G}kali${N}"
+    echo -e "${W}  Ce menu:        ${G}kali-setup${N}"
     sleep 3
     menu_post
 }
 
-show_banner
-if proot-distro list 2>/dev/null | grep -q kali || [ -f "$HOME/kali-fs/bin/bash" ]; then
-    echo -e "${G}[✓] Kali Linux détecté${N}"
-    sleep 1
-    menu_post
-else
+menu_install() {
     echo -e "${R}╔══════════════════════════════════════════╗"
     echo -e "║          MENU INSTALLATION               ║"
     echo -e "╚══════════════════════════════════════════╝${N}"
@@ -225,8 +231,15 @@ else
     case "$CHOIX" in
         1) auto_install ;;
         2) echo -e "${R}[!] Bye!${N}"; exit 0 ;;
-        *) echo -e "${R}[-] Invalide${N}" ;;
+        *) echo -e "${R}[-] Invalide${N}"; menu_install ;;
     esac
+}
+
+show_banner
+if is_installed; then
+    echo -e "${G}[✓] Kali Linux détecté${N}"
+    sleep 1
+    menu_post
+else
+    menu_install
 fi
-EOF
-chmod +x $PREFIX/bin/kali-setup && kali-setup
