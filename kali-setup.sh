@@ -11,20 +11,8 @@ SCRIPT_URL="https://raw.githubusercontent.com/urueshzfowblauey-collab/kali-termu
 
 THEME="red"
 LANG_CODE="fr"
-
-load_config() {
-    if [ -f "${CONFIG_FILE}" ]; then
-        source "${CONFIG_FILE}"
-    fi
-    apply_theme
-}
-
-save_config() {
-    cat > "${CONFIG_FILE}" << EOF
-THEME="${THEME}"
-LANG_CODE="${LANG_CODE}"
-EOF
-}
+KALI_PASSWORD_HASH=""
+KALI_PASSWORD_SALT=""
 
 apply_theme() {
     case "${THEME}" in
@@ -54,6 +42,37 @@ apply_theme() {
             ACCENT='\033[0;31m'
             ;;
     esac
+}
+
+load_config() {
+    if [ -f "${CONFIG_FILE}" ]; then
+        local line key value
+        while IFS= read -r line || [ -n "$line" ]; do
+            [[ "$line" =~ ^[[:space:]]*# ]] && continue
+            [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+            if [[ "$line" =~ ^([A-Z_]+)=\"([^\"]*)\"$ ]]; then
+                key="${BASH_REMATCH[1]}"
+                value="${BASH_REMATCH[2]}"
+                case "$key" in
+                    THEME)               THEME="$value" ;;
+                    LANG_CODE)           LANG_CODE="$value" ;;
+                    KALI_PASSWORD_HASH)  KALI_PASSWORD_HASH="$value" ;;
+                    KALI_PASSWORD_SALT)  KALI_PASSWORD_SALT="$value" ;;
+                esac
+            fi
+        done < "${CONFIG_FILE}"
+    fi
+    apply_theme
+}
+
+save_config() {
+    cat > "${CONFIG_FILE}" << EOF
+THEME="${THEME}"
+LANG_CODE="${LANG_CODE}"
+KALI_PASSWORD_HASH="${KALI_PASSWORD_HASH}"
+KALI_PASSWORD_SALT="${KALI_PASSWORD_SALT}"
+EOF
+    chmod 600 "${CONFIG_FILE}"
 }
 
 t() {
@@ -111,12 +130,31 @@ t() {
 
 exec 3</dev/tty
 
+acquire_lock() {
+    if ! command -v flock > /dev/null 2>&1; then
+        if [ -f "${LOCK_FILE}" ]; then
+            local pid
+            pid="$(cat "${LOCK_FILE}" 2>/dev/null || echo "")"
+            if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+                die "Une instance est deja en cours (PID $pid)"
+            fi
+        fi
+        echo $$ > "${LOCK_FILE}"
+        return 0
+    fi
+    exec 9>"${LOCK_FILE}"
+    if ! flock -n 9; then
+        die "Une instance est deja en cours"
+    fi
+    echo $$ >&9
+}
+
 trap 'handle_exit $?' EXIT
 trap 'echo -e "\n${R}[!] Interruption${N}"; exit 130' INT TERM
 
 handle_exit() {
     local code=$1
-    rm -f "${LOCK_FILE}"
+    rm -f "${LOCK_FILE}" 2>/dev/null || true
     if [ "$code" -ne 0 ] && [ "$code" -ne 130 ]; then
         echo -e "${R}[!] Erreur (code $code) — voir ${LOG_FILE}${N}"
     fi
@@ -132,20 +170,47 @@ need_cmd() {
     done
 }
 
+need_cmd_hash() {
+    if command -v sha256sum > /dev/null 2>&1; then
+        echo "sha256sum"
+    elif command -v shasum > /dev/null 2>&1; then
+        echo "shasum -a 256"
+    else
+        die "sha256sum ou shasum introuvable — pkg install coreutils"
+    fi
+}
+
+do_sha256() {
+    local file="$1"
+    local cmd
+    cmd="$(need_cmd_hash)"
+    $cmd "$file" | awk '{print $1}'
+}
+
+gen_salt() {
+    if command -v openssl > /dev/null 2>&1; then
+        openssl rand -hex 16
+    else
+        head -c 32 /dev/urandom 2>/dev/null | od -An -tx1 | tr -d ' \n' | head -c 32
+    fi
+}
+
 hash_password() {
-    echo -n "$1" | sha256sum | awk '{print $1}'
+    local password="$1"
+    local salt="$2"
+    local cmd
+    cmd="$(need_cmd_hash)"
+    printf '%s%s' "$salt" "$password" | $cmd | awk '{print $1}'
 }
 
 check_password() {
-    if [ ! -f "${CONFIG_FILE}" ]; then return 0; fi
-    source "${CONFIG_FILE}"
-    if [ -z "${KALI_PASSWORD_HASH:-}" ]; then return 0; fi
+    if [ -z "${KALI_PASSWORD_HASH}" ]; then return 0; fi
     local attempts=0
     while [ "$attempts" -lt 3 ]; do
         read -r -s -p "$(echo -e "${C}[?] Mot de passe: ${N}")" input <&3
         echo ""
         local input_hash
-        input_hash="$(hash_password "$input")"
+        input_hash="$(hash_password "$input" "$KALI_PASSWORD_SALT")"
         if [ "$input_hash" = "$KALI_PASSWORD_HASH" ]; then
             return 0
         fi
@@ -159,7 +224,9 @@ set_password() {
     read -r -s -p "$(echo -e "${C}[?] Nouveau mot de passe (vide = desactiver): ${N}")" pw1 <&3
     echo ""
     if [ -z "$pw1" ]; then
-        sed -i '/KALI_PASSWORD_HASH/d' "${CONFIG_FILE}" 2>/dev/null || true
+        KALI_PASSWORD_HASH=""
+        KALI_PASSWORD_SALT=""
+        save_config
         echo -e "${G}[✓] Mot de passe desactive${N}"
         log "Mot de passe desactive"
         sleep 1; return
@@ -170,13 +237,13 @@ set_password() {
         echo -e "${R}[-] Les mots de passe ne correspondent pas${N}"
         sleep 1; return
     fi
+    local salt
+    salt="$(gen_salt)"
     local hash
-    hash="$(hash_password "$pw1")"
-    if grep -q "KALI_PASSWORD_HASH" "${CONFIG_FILE}" 2>/dev/null; then
-        sed -i "s/KALI_PASSWORD_HASH=.*/KALI_PASSWORD_HASH=\"${hash}\"/" "${CONFIG_FILE}"
-    else
-        echo "KALI_PASSWORD_HASH=\"${hash}\"" >> "${CONFIG_FILE}"
-    fi
+    hash="$(hash_password "$pw1" "$salt")"
+    KALI_PASSWORD_HASH="$hash"
+    KALI_PASSWORD_SALT="$salt"
+    save_config
     echo -e "${G}[✓] Mot de passe defini${N}"
     log "Mot de passe mis a jour"
     sleep 1
@@ -279,22 +346,25 @@ real_progress() {
 }
 
 check_internet() {
-    if curl -I --connect-timeout 10 --max-time 15 https://kali.download > /dev/null 2>&1; then
-        echo -e "${G}[✓] Connexion OK${N}"
-        log "Internet OK"
-    else
-        die "Pas de connexion internet"
-    fi
+    local urls="https://google.com https://1.1.1.1 https://cloudflare.com"
+    for url in $urls; do
+        if curl -sf --connect-timeout 8 --max-time 12 "$url" > /dev/null 2>&1; then
+            echo -e "${G}[✓] Connexion OK${N}"
+            log "Internet OK via $url"
+            return 0
+        fi
+    done
+    die "Pas de connexion internet"
 }
 
 check_arch() {
     local raw
     raw="$(uname -m)"
     case "$raw" in
-        aarch64|armv8l|armv8b) KARCH="arm64" ;;
-        armv7l|armv7b|armhf)   KARCH="armhf" ;;
-        x86_64)                 KARCH="amd64" ;;
-        i686|i386)              KARCH="i386"  ;;
+        aarch64|armv8l|armv8b|aarch64_be|arm64|arm64-v8a) KARCH="arm64" ;;
+        armv7l|armv7b|armhf|armv7-a|armv8-a)              KARCH="armhf" ;;
+        x86_64|amd64)                                       KARCH="amd64" ;;
+        i686|i386|i486|i586)                                KARCH="i386"  ;;
         *) die "Architecture non supportee: $raw" ;;
     esac
     echo -e "${G}[✓] Architecture: $raw → $KARCH${N}"
@@ -309,8 +379,12 @@ check_space() {
         echo -e "${Y}[!] Impossible de verifier l'espace — on continue${N}"
         return 0
     fi
-    if [ "$free_kb" -lt 6000000 ]; then
-        die "Espace insuffisant: $(( free_kb / 1024 )) MB libres, 6 GB requis"
+    local required_kb=8000000
+    if [ "${ROOTFS_TYPE:-nano}" = "full" ]; then
+        required_kb=12000000
+    fi
+    if [ "$free_kb" -lt "$required_kb" ]; then
+        die "Espace insuffisant: $(( free_kb / 1024 )) MB libres, $(( required_kb / 1024 )) MB requis"
     fi
     echo -e "${G}[✓] Espace OK: $(( free_kb / 1024 )) MB libres${N}"
     log "Espace: $free_kb KB libres"
@@ -341,16 +415,16 @@ choose_rootfs() {
 
 verify_sha256() {
     local file="$1"
-    local expected_sha=""
     local fname
     fname="$(basename "$file")"
     echo -e "${Y}[→] Verification SHA256...${N}"
+    local expected_sha=""
     for sum_url in \
         "${ROOTFS_URL_BASE}/SHA256SUMS" \
         "${ROOTFS_URL_FALLBACK}/SHA256SUMS" \
         "${ROOTFS_URL}.sha256sum" \
         "${ROOTFS_URL_FB}.sha256sum"; do
-        expected_sha="$(curl -fsSL --max-time 10 "$sum_url" 2>/dev/null | grep "$fname" | awk '{print $1}')"
+        expected_sha="$(curl -fsSL --max-time 10 "$sum_url" 2>/dev/null | grep -E "^[0-9a-f]{64}[[:space:]]+${fname}$" | awk '{print $1}')"
         [ -n "$expected_sha" ] && break
     done
     if [ -z "$expected_sha" ]; then
@@ -358,7 +432,7 @@ verify_sha256() {
         return 0
     fi
     local actual_sha
-    actual_sha="$(sha256sum "$file" | awk '{print $1}')"
+    actual_sha="$(do_sha256 "$file")"
     if [ "$expected_sha" = "$actual_sha" ]; then
         echo -e "${G}[✓] SHA256 OK${N}"
         log "SHA256 valide: $actual_sha"
@@ -422,6 +496,11 @@ run_kali_cmd() {
 }
 
 create_launcher() {
+    if [ -z "${PREFIX:-}" ]; then
+        echo -e "${Y}[!] PREFIX non defini — launcher non cree${N}"
+        log "PREFIX non defini — launcher ignore"
+        return 0
+    fi
     local launcher="${PREFIX}/bin/kali"
     local kali_fs_path="${KALI_FS}"
     cat > "${launcher}" << LAUNCHER
@@ -446,6 +525,7 @@ LAUNCHER
 }
 
 install_kali_setup() {
+    if [ -z "${PREFIX:-}" ]; then return 0; fi
     local setup_dest="${PREFIX}/bin/kali-setup"
     local src=""
     if [ -f "$0" ] && [ "$0" != "bash" ] && [ "$0" != "/proc/self/fd/0" ]; then
@@ -502,6 +582,8 @@ restore_snapshot() {
     local conf
     read -r -p "$(echo -e "${R}[!] Cette action ecrase kali-fs. Continuer ? (oui/non): ${N}")" conf <&3
     [ "${conf}" = "oui" ] || { echo -e "${Y}[!] Annule${N}"; sleep 1; return; }
+    echo -e "${Y}[→] Suppression de l'ancien kali-fs...${N}"
+    rm -rf "${KALI_FS}"
     (tar -xzf "${selected}" -C "${HOME}" 2>/dev/null) &
     real_progress $! "Restauration snapshot" || die "Restauration echouee"
     echo -e "${G}[✓] Restauration OK${N}"
@@ -543,6 +625,8 @@ restore_kali() {
     local conf
     read -r -p "$(echo -e "${R}[!] Cette action ecrase kali-fs. Continuer ? (oui/non): ${N}")" conf <&3
     [ "${conf}" = "oui" ] || { echo -e "${Y}[!] Annule${N}"; sleep 1; return; }
+    echo -e "${Y}[→] Suppression de l'ancien kali-fs...${N}"
+    rm -rf "${KALI_FS}"
     (tar -xzf "${backup_file}" -C "${HOME}" 2>/dev/null) &
     real_progress $! "Restauration" || die "Restauration echouee"
     echo -e "${G}[✓] Restauration OK${N}"
@@ -565,10 +649,10 @@ install_tools() {
     echo -e "${C}[?] Choisir les outils a installer:${N}"
     echo -e "${C}[1]${W} Outils de base (nmap hydra sqlmap aircrack-ng git python3)"
     echo -e "${C}[2]${W} Burp Suite"
-    echo -e "${C}[3]${W} Wireshark"
+    echo -e "${C}[3]${W} Wireshark (tshark uniquement — proot limite)"
     echo -e "${C}[4]${W} John the Ripper"
     echo -e "${C}[5]${W} Hashcat"
-    echo -e "${C}[6]${W} Metasploit Framework"
+    echo -e "${C}[6]${W} Metasploit Framework (sans msfdb — PostgreSQL limite dans proot)"
     echo -e "${C}[7]${W} Tout installer"
     echo -e "${C}[8]${W} $(t back)"
     echo ""
@@ -584,8 +668,9 @@ install_tools() {
             real_progress $! "Burp Suite" || echo -e "${Y}[!] Burp Suite indisponible${N}"
             ;;
         3)
-            run_kali_cmd "apt update -y && apt install -y wireshark tshark" &
-            real_progress $! "Wireshark" || echo -e "${Y}[!] Wireshark indisponible${N}"
+            run_kali_cmd "apt update -y && apt install -y tshark" &
+            real_progress $! "tshark" || echo -e "${Y}[!] tshark indisponible${N}"
+            echo -e "${Y}[!] Wireshark GUI non fonctionnel dans proot — tshark installe${N}"
             ;;
         4)
             run_kali_cmd "apt update -y && apt install -y john" &
@@ -596,14 +681,16 @@ install_tools() {
             real_progress $! "Hashcat" || echo -e "${Y}[!] Hashcat indisponible${N}"
             ;;
         6)
-            run_kali_cmd "apt update -y && apt install -y metasploit-framework && msfdb init" &
-            real_progress $! "Metasploit + msfdb init" || echo -e "${Y}[!] Metasploit indisponible${N}"
+            run_kali_cmd "apt update -y && apt install -y metasploit-framework" &
+            real_progress $! "Metasploit" || echo -e "${Y}[!] Metasploit indisponible${N}"
+            echo -e "${Y}[!] msfdb non initialise — PostgreSQL/systemd non supportes dans proot${N}"
             ;;
         7)
-            run_kali_cmd "apt update -y && apt install -y nmap hydra sqlmap aircrack-ng curl wget git python3 python3-pip burpsuite wireshark tshark john hashcat" &
+            run_kali_cmd "apt update -y && apt install -y nmap hydra sqlmap aircrack-ng curl wget git python3 python3-pip burpsuite tshark john hashcat" &
             real_progress $! "Tous les outils" || echo -e "${Y}[!] Certains outils indisponibles${N}"
-            run_kali_cmd "apt install -y metasploit-framework && msfdb init" &
-            real_progress $! "Metasploit + msfdb init" || echo -e "${Y}[!] Metasploit indisponible${N}"
+            run_kali_cmd "apt install -y metasploit-framework" &
+            real_progress $! "Metasploit" || echo -e "${Y}[!] Metasploit indisponible${N}"
+            echo -e "${Y}[!] msfdb non initialise — PostgreSQL/systemd non supportes dans proot${N}"
             ;;
         8) return ;;
         *) echo -e "${R}[-] Invalide${N}"; sleep 1; return ;;
@@ -661,18 +748,33 @@ clean_cache() {
 self_update() {
     show_banner
     echo -e "${Y}[→] Verification de la mise a jour du script...${N}"
-    local tmp_file="${HOME}/.kali-setup-new.sh"
+    local tmp_file
+    tmp_file="$(mktemp "${HOME}/.kali-setup-new.XXXXXX")"
     if curl -fsSL --max-time 30 "${SCRIPT_URL}" -o "${tmp_file}" 2>/dev/null; then
+        local tmp_size
+        tmp_size="$(wc -c < "$tmp_file" 2>/dev/null || echo 0)"
+        if [ "$tmp_size" -lt 1000 ]; then
+            echo -e "${R}[-] Fichier telecharge trop petit — mise a jour annulee${N}"
+            rm -f "$tmp_file"
+            sleep 2; return
+        fi
+        if ! bash -n "$tmp_file" 2>/dev/null; then
+            echo -e "${R}[-] Fichier telecharge invalide (erreur syntaxe) — mise a jour annulee${N}"
+            rm -f "$tmp_file"
+            sleep 2; return
+        fi
         local new_hash old_hash
-        new_hash="$(sha256sum "$tmp_file" | awk '{print $1}')"
-        old_hash="$(sha256sum "$0" 2>/dev/null | awk '{print $1}')" || old_hash=""
+        new_hash="$(do_sha256 "$tmp_file")"
+        old_hash="$(do_sha256 "$0" 2>/dev/null)" || old_hash=""
         if [ "$new_hash" = "$old_hash" ]; then
             echo -e "${G}[✓] Script deja a jour${N}"
             rm -f "$tmp_file"
         else
             mv "$tmp_file" "$0"
             chmod 700 "$0"
-            cp "$0" "${PREFIX}/bin/kali-setup" 2>/dev/null || true
+            if [ -n "${PREFIX:-}" ]; then
+                cp "$0" "${PREFIX}/bin/kali-setup" 2>/dev/null || true
+            fi
             echo -e "${G}[✓] Script mis a jour — relancez kali-setup${N}"
             log "Script auto-mis a jour"
             sleep 2
@@ -757,7 +859,9 @@ uninstall_kali() {
     read -r -p "$(echo -e "${R}[!] Confirmer la desinstallation ? (oui/non): ${N}")" conf <&3
     if [ "${conf}" = "oui" ]; then
         rm -rf "${KALI_FS}"
-        rm -f "${PREFIX}/bin/kali" "${PREFIX}/bin/kali-setup"
+        if [ -n "${PREFIX:-}" ]; then
+            rm -f "${PREFIX}/bin/kali" "${PREFIX}/bin/kali-setup"
+        fi
         echo -e "${G}[✓] Kali desinstalle${N}"
         log "Kali desinstalle"
         sleep 2
@@ -769,6 +873,21 @@ is_installed() {
     [ -f "${KALI_FS}/bin/bash" ] || \
     [ -f "${KALI_FS}/usr/bin/bash" ] || \
     [ -f "${KALI_FS}/bin/sh" ]
+}
+
+verify_rootfs_integrity() {
+    if [ ! -f "${KALI_FS}/etc/os-release" ]; then
+        rm -rf "${KALI_FS}"
+        die "Extraction incomplete — /etc/os-release absent, kali-fs supprime"
+    fi
+    if ! grep -qi "kali" "${KALI_FS}/etc/os-release" 2>/dev/null; then
+        rm -rf "${KALI_FS}"
+        die "os-release ne correspond pas a Kali Linux, kali-fs supprime"
+    fi
+    if [ ! -d "${KALI_FS}/etc" ] || [ ! -d "${KALI_FS}/usr" ] || [ ! -d "${KALI_FS}/var" ]; then
+        rm -rf "${KALI_FS}"
+        die "Structure rootfs incomplete, kali-fs supprime"
+    fi
 }
 
 menu_post() {
@@ -836,17 +955,26 @@ auto_install() {
     echo -e "${G}[→] Installation automatique${N}\n"
     log "=== Installation demarree ==="
 
-    if [ -f "${LOCK_FILE}" ]; then
-        die "Installation deja en cours"
-    fi
-    touch "${LOCK_FILE}"
+    acquire_lock
 
     check_internet
     check_arch
-    check_space
     choose_rootfs
+    check_space
     update_termux
     install_deps
+
+    if [ -d "${KALI_FS}" ]; then
+        echo -e "${Y}[!] Un dossier kali-fs existe deja.${N}"
+        local conf
+        read -r -p "$(echo -e "${R}[?] Supprimer et reinstaller ? (oui/non): ${N}")" conf <&3
+        if [ "${conf}" != "oui" ]; then
+            echo -e "${Y}[!] Installation annulee${N}"
+            sleep 1; return
+        fi
+        rm -rf "${KALI_FS}"
+        log "kali-fs existant supprime avant reinstallation"
+    fi
 
     local rootfs_dest="${HOME}/${ROOTFS_FILE}"
 
@@ -868,7 +996,7 @@ auto_install() {
     else
         echo -e "${Y}[→] Telechargement ${ROOTFS_FILE}...${N}"
         log "Telechargement: $active_url"
-        if ! curl -fL --progress-bar "${active_url}" -o "${rootfs_dest}"; then
+        if ! curl -fL -C - --progress-bar "${active_url}" -o "${rootfs_dest}"; then
             rm -f "${rootfs_dest}"
             die "Echec du telechargement"
         fi
@@ -895,7 +1023,9 @@ auto_install() {
         die "Extraction echouee — kali-fs nettoye"
     fi
 
-    echo -e "${G}[✓] Rootfs extrait${N}"
+    verify_rootfs_integrity
+
+    echo -e "${G}[✓] Rootfs extrait et valide${N}"
     log "Rootfs extrait"
 
     echo -e "${Y}[→] Configuration initiale Kali...${N}"
@@ -904,6 +1034,9 @@ auto_install() {
 
     create_launcher
     install_kali_setup
+
+    echo -e "${G}[→] Configuration du mot de passe de protection${N}"
+    set_password
 
     show_banner
     echo -e "${G}╔══════════════════════════════════════════╗"
@@ -918,7 +1051,7 @@ auto_install() {
 
 touch "${LOG_FILE}"
 log "=== kali-setup demarre ==="
-rm -f "${LOCK_FILE}"
+rm -f "${LOCK_FILE}" 2>/dev/null || true
 
 load_config
 intro_animation
