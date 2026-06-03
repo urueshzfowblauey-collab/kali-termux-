@@ -13,6 +13,7 @@ KALI_FS="${HOME}/kali-fs"
 LOG_FILE="${HOME}/kali-setup.log"
 LOCK_FILE="${HOME}/.kali-setup.lock"
 ROOTFS_URL_BASE="https://kali.download/nethunter-images/current/rootfs"
+ROOTFS_URL_FALLBACK="https://old.kali.org/nethunter-images/kali-2024.2/rootfs"
 
 trap 'handle_exit $?' EXIT
 trap 'echo -e "\n${R}[!] Interruption — etat sauvegarde${N}"; exit 130' INT TERM
@@ -171,26 +172,23 @@ check_space() {
 choose_rootfs() {
     show_banner
     echo -e "${C}[?] Choisir le type de rootfs:${N}"
-    echo -e "${C}[1]${W} Minimal   (~500 MB)"
-    echo -e "${C}[2]${W} Full      (~2.5 GB)"
-    echo -e "${C}[3]${W} XFCE      (~3 GB)"
+    echo -e "${C}[1]${W} Nano    (~200 MB)"
+    echo -e "${C}[2]${W} Minimal (~140 MB)"
+    echo -e "${C}[3]${W} Full    (~2 GB)"
     echo ""
     local choice
     while true; do
         read -r -p "$(echo -e "${C}Choix [1-3]: ${N}")" choice
         case "$choice" in
-            1) ROOTFS_TYPE="minimal"; break ;;
-            2) ROOTFS_TYPE="full";    break ;;
-            3) ROOTFS_TYPE="xfce";    break ;;
+            1) ROOTFS_TYPE="nano";    break ;;
+            2) ROOTFS_TYPE="minimal"; break ;;
+            3) ROOTFS_TYPE="full";    break ;;
             *) echo -e "${R}Choix invalide${N}" ;;
         esac
     done
-    case "$ROOTFS_TYPE" in
-        minimal) ROOTFS_FILE="kali-nethunter-rootfs-minimal-${KARCH}.tar.xz" ;;
-        full)    ROOTFS_FILE="kali-nethunter-rootfs-full-${KARCH}.tar.xz" ;;
-        xfce)    ROOTFS_FILE="kali-nethunter-rootfs-kex-xfce-${KARCH}.tar.xz" ;;
-    esac
+    ROOTFS_FILE="kalifs-${KARCH}-${ROOTFS_TYPE}.tar.xz"
     ROOTFS_URL="${ROOTFS_URL_BASE}/${ROOTFS_FILE}"
+    ROOTFS_URL_FB="${ROOTFS_URL_FALLBACK}/${ROOTFS_FILE}"
     log "Rootfs choisi: $ROOTFS_TYPE ($ROOTFS_FILE)"
 }
 
@@ -199,14 +197,10 @@ verify_sha256() {
     local expected_sha=""
     echo -e "${Y}[→] Verification SHA256...${N}"
 
-    for suffix in ".sha256sum" ".SHA256" ""; do
-        local sum_url
-        if [ -z "$suffix" ]; then
-            sum_url="${ROOTFS_URL_BASE}/SHA256SUMS"
-        else
-            sum_url="${ROOTFS_URL}${suffix}"
-        fi
-        expected_sha="$(curl -fsSL --max-time 10 "$sum_url" 2>/dev/null | grep "$(basename "$file")" | awk '{print $1}')"
+    local fname
+    fname="$(basename "$file")"
+    for sum_url in         "${ROOTFS_URL_BASE}/SHA256SUMS"         "${ROOTFS_URL_FALLBACK}/SHA256SUMS"         "${ROOTFS_URL}.sha256sum"         "${ROOTFS_URL_FB}.sha256sum"; do
+        expected_sha="$(curl -fsSL --max-time 10 "$sum_url" 2>/dev/null | grep "$fname" | awk '{print $1}')"
         [ -n "$expected_sha" ] && break
     done
 
@@ -554,8 +548,15 @@ auto_install() {
     local rootfs_dest="${HOME}/${ROOTFS_FILE}"
 
     echo -e "${Y}[→] Verification disponibilite du rootfs...${N}"
-    if ! curl -fsI --max-time 15 "${ROOTFS_URL}" > /dev/null 2>&1; then
-        die "Rootfs introuvable sur le serveur: ${ROOTFS_URL}"
+    echo -e "${Y}[→] Verification disponibilite du rootfs...${N}"
+    local active_url=""
+    if curl -fsI --max-time 15 "${ROOTFS_URL}" > /dev/null 2>&1; then
+        active_url="${ROOTFS_URL}"
+    elif curl -fsI --max-time 15 "${ROOTFS_URL_FB}" > /dev/null 2>&1; then
+        active_url="${ROOTFS_URL_FB}"
+        echo -e "${Y}[!] Miroir principal indisponible — utilisation du miroir de secours${N}"
+    else
+        die "Rootfs introuvable: ${ROOTFS_FILE} absent des deux miroirs"
     fi
     echo -e "${G}[✓] Rootfs disponible${N}"
 
@@ -564,8 +565,8 @@ auto_install() {
         verify_sha256 "${rootfs_dest}"
     else
         echo -e "${Y}[→] Telechargement ${ROOTFS_FILE}...${N}"
-        log "Telechargement: $ROOTFS_URL"
-        if ! curl -fL --progress-bar "${ROOTFS_URL}" -o "${rootfs_dest}"; then
+        log "Telechargement: $active_url"
+        if ! curl -fL --progress-bar "${active_url}" -o "${rootfs_dest}"; then
             rm -f "${rootfs_dest}"
             die "Echec du telechargement"
         fi
