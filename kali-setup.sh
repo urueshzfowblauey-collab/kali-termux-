@@ -116,7 +116,7 @@ real_progress() {
     while kill -0 "$pid" 2>/dev/null; do
         local c="${chars:$((i % ${#chars})):1}"
         printf "\r${Y}  %s %s ...${N}" "$c" "$label"
-        sleep 0.1
+        read -r -t 0.1 _ 2>/dev/null || true
         ((i++)) || true
     done
     wait "$pid"
@@ -143,7 +143,6 @@ check_arch() {
     raw="$(uname -m)"
     case "$raw" in
         aarch64|armv8l|armv8b) KARCH="arm64" ;;
-        # BUG 3 FIX: armhf garde "armhf", on verifiera l'URL avant download
         armv7l|armv7b|armhf)   KARCH="armhf" ;;
         x86_64)                 KARCH="amd64" ;;
         i686|i386)              KARCH="i386"  ;;
@@ -186,7 +185,11 @@ choose_rootfs() {
             *) echo -e "${R}Choix invalide${N}" ;;
         esac
     done
-    ROOTFS_FILE="kali-nethunter-rootfs-${ROOTFS_TYPE}-${KARCH}.tar.xz"
+    case "$ROOTFS_TYPE" in
+        minimal) ROOTFS_FILE="kali-nethunter-rootfs-minimal-${KARCH}.tar.xz" ;;
+        full)    ROOTFS_FILE="kali-nethunter-rootfs-full-${KARCH}.tar.xz" ;;
+        xfce)    ROOTFS_FILE="kali-nethunter-rootfs-kex-xfce-${KARCH}.tar.xz" ;;
+    esac
     ROOTFS_URL="${ROOTFS_URL_BASE}/${ROOTFS_FILE}"
     log "Rootfs choisi: $ROOTFS_TYPE ($ROOTFS_FILE)"
 }
@@ -332,7 +335,6 @@ snapshot() {
     mkdir -p "${snap_dir}"
     local snap_file="${snap_dir}/snap-$(date '+%Y%m%d-%H%M%S').tar.gz"
     echo -e "${Y}[→] Creation snapshot...${N}"
-    # BUG 17 FIX: exclut cache apt, tmp et logs pour allegement
     (tar -czf "${snap_file}" \
         --exclude="${KALI_FS}/var/cache/apt" \
         --exclude="${KALI_FS}/tmp" \
@@ -366,13 +368,11 @@ restore_snapshot() {
     fi
     local selected="${snaps[$((choice-1))]}"
 
-    # BUG 18 FIX: verification integrite avant restauration
     echo -e "${Y}[→] Verification integrite de l'archive...${N}"
     if ! tar -tzf "${selected}" > /dev/null 2>&1; then
         die "Archive corrompue — restauration annulee"
     fi
 
-    # BUG 9 FIX: confirmation + sauvegarde avant restauration
     local conf
     read -r -p "$(echo -e "${R}[!] Cette action ecrase kali-fs. Continuer ? (oui/non): ${N}")" conf
     [ "${conf}" = "oui" ] || { echo -e "${Y}[!] Annule${N}"; sleep 1; return; }
@@ -395,7 +395,6 @@ backup_kali() {
     fi
     local backup="${HOME}/kali-backup-$(date '+%Y%m%d-%H%M%S').tar.gz"
     echo -e "${Y}[→] Backup vers $backup...${N}"
-    # BUG 17 FIX: exclut cache apt, tmp et logs
     (tar -czf "${backup}" \
         --exclude="${KALI_FS}/var/cache/apt" \
         --exclude="${KALI_FS}/tmp" \
@@ -415,13 +414,11 @@ restore_kali() {
         sleep 2; return
     fi
 
-    # BUG 18 FIX: verification integrite avant restauration
     echo -e "${Y}[→] Verification integrite de l'archive...${N}"
     if ! tar -tzf "${backup_file}" > /dev/null 2>&1; then
         die "Archive corrompue — restauration annulee"
     fi
 
-    # BUG 10 FIX: confirmation obligatoire
     local conf
     read -r -p "$(echo -e "${R}[!] Cette action ecrase kali-fs. Continuer ? (oui/non): ${N}")" conf
     [ "${conf}" = "oui" ] || { echo -e "${Y}[!] Annule${N}"; sleep 1; return; }
@@ -480,13 +477,11 @@ uninstall_kali() {
 }
 
 is_installed() {
-    # BUG 16 FIX: verifie /bin/bash, /usr/bin/bash et /bin/sh
     [ -f "${KALI_FS}/bin/bash" ] || \
     [ -f "${KALI_FS}/usr/bin/bash" ] || \
     [ -f "${KALI_FS}/bin/sh" ]
 }
 
-# Elles retournent simplement, la boucle while du menu gere la suite
 menu_post() {
     local choice
     while true; do
@@ -544,7 +539,6 @@ auto_install() {
     echo -e "${G}[→] Installation automatique${N}\n"
     log "=== Installation demarree ==="
 
-    # BUG 1 FIX: verifier et creer le lock file
     if [ -f "${LOCK_FILE}" ]; then
         die "Installation deja en cours (lock: ${LOCK_FILE})"
     fi
@@ -559,7 +553,6 @@ auto_install() {
 
     local rootfs_dest="${HOME}/${ROOTFS_FILE}"
 
-    # BUG 4 FIX: verifier que l'URL existe avant de telecharger
     echo -e "${Y}[→] Verification disponibilite du rootfs...${N}"
     if ! curl -fsI --max-time 15 "${ROOTFS_URL}" > /dev/null 2>&1; then
         die "Rootfs introuvable sur le serveur: ${ROOTFS_URL}"
@@ -582,7 +575,6 @@ auto_install() {
     echo -e "${Y}[→] Extraction du rootfs...${N}"
     mkdir -p "${KALI_FS}"
 
-    # BUG 6 FIX: tar execute via env dans proot, plus fiable
     (proot \
         --link2symlink \
         /usr/bin/env tar \
@@ -596,7 +588,6 @@ auto_install() {
 
     rm -f "${rootfs_dest}"
 
-    # BUG 20 FIX: nettoyage si extraction echouee
     if [ "$tar_exit" -ne 0 ] || ! is_installed; then
         echo -e "${R}[!] Extraction echouee — nettoyage...${N}"
         rm -rf "${KALI_FS}"
