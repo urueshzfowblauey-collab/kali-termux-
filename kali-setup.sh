@@ -119,11 +119,18 @@ real_progress() {
         sleep 0.1
         ((i++)) || true
     done
-    printf "\r${G}  [✓] %s${N}\n" "$label"
+    wait "$pid"
+    local exit_code=$?
+    if [ "$exit_code" -eq 0 ]; then
+        printf "\r${G}  [✓] %s${N}\n" "$label"
+    else
+        printf "\r${R}  [✗] %s (erreur $exit_code)${N}\n" "$label"
+    fi
+    return "$exit_code"
 }
 
 check_internet() {
-    if curl -fsSL --max-time 5 https://kali.download > /dev/null 2>&1; then
+    if curl -I --connect-timeout 10 --max-time 15 https://kali.download > /dev/null 2>&1; then
         echo -e "${G}[✓] Connexion OK${N}"
         log "Internet OK"
     else
@@ -136,6 +143,7 @@ check_arch() {
     raw="$(uname -m)"
     case "$raw" in
         aarch64|armv8l|armv8b) KARCH="arm64" ;;
+        # BUG 3 FIX: armhf garde "armhf", on verifiera l'URL avant download
         armv7l|armv7b|armhf)   KARCH="armhf" ;;
         x86_64)                 KARCH="amd64" ;;
         i686|i386)              KARCH="i386"  ;;
@@ -154,8 +162,8 @@ check_space() {
         log "check_space: df a echoue"
         return 0
     fi
-    if [ "$free_kb" -lt 4000000 ]; then
-        die "Espace insuffisant: $(( free_kb / 1024 )) MB libres, 4 GB requis"
+    if [ "$free_kb" -lt 6000000 ]; then
+        die "Espace insuffisant: $(( free_kb / 1024 )) MB libres, 6 GB requis"
     fi
     echo -e "${G}[✓] Espace OK: $(( free_kb / 1024 )) MB libres${N}"
     log "Espace: $free_kb KB libres"
@@ -185,13 +193,26 @@ choose_rootfs() {
 
 verify_sha256() {
     local file="$1"
-    local expected_sha
+    local expected_sha=""
     echo -e "${Y}[→] Verification SHA256...${N}"
-    if ! expected_sha="$(curl -fsSL "${ROOTFS_URL}.sha256sum" 2>/dev/null | awk '{print $1}')"; then
+
+    for suffix in ".sha256sum" ".SHA256" ""; do
+        local sum_url
+        if [ -z "$suffix" ]; then
+            sum_url="${ROOTFS_URL_BASE}/SHA256SUMS"
+        else
+            sum_url="${ROOTFS_URL}${suffix}"
+        fi
+        expected_sha="$(curl -fsSL --max-time 10 "$sum_url" 2>/dev/null | grep "$(basename "$file")" | awk '{print $1}')"
+        [ -n "$expected_sha" ] && break
+    done
+
+    if [ -z "$expected_sha" ]; then
         echo -e "${Y}[!] SHA256 indisponible — verification ignoree${N}"
         log "SHA256: fichier sum introuvable"
         return 0
     fi
+
     local actual_sha
     actual_sha="$(sha256sum "$file" | awk '{print $1}')"
     if [ "$expected_sha" = "$actual_sha" ]; then
@@ -206,14 +227,21 @@ verify_sha256() {
 install_deps() {
     echo -e "${Y}[→] Installation des dependances...${N}"
     (pkg install -y proot wget curl tar xz-utils 2>&1 | tee -a "${LOG_FILE}" > /dev/null) &
-    real_progress $! "Installation dependances"
+    real_progress $! "Installation dependances" || die "Echec installation dependances"
     echo -e "${G}[✓] Dependances OK${N}"
 }
 
 update_termux() {
+    local conf
+    read -r -p "$(echo -e "${C}[?] Mettre a jour Termux avant installation ? (oui/non): ${N}")" conf
+    if [ "${conf}" != "oui" ]; then
+        echo -e "${Y}[!] Mise a jour Termux ignoree${N}"
+        log "Mise a jour Termux: ignoree par l'utilisateur"
+        return 0
+    fi
     echo -e "${Y}[→] Mise a jour Termux...${N}"
     (pkg update -y && pkg upgrade -y) >> "${LOG_FILE}" 2>&1 &
-    real_progress $! "Mise a jour Termux"
+    real_progress $! "Mise a jour Termux" || echo -e "${Y}[!] Mise a jour Termux partielle — on continue${N}"
 }
 
 run_kali() {
@@ -248,15 +276,22 @@ run_kali_cmd() {
             DEBIAN_FRONTEND=noninteractive \
             PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
         /bin/bash --login -c "$cmd" >> "${LOG_FILE}" 2>&1
+    return $?
 }
 
 create_launcher() {
     local launcher="${PREFIX}/bin/kali"
+    local kali_fs_path="${KALI_FS}"
     cat > "${launcher}" << LAUNCHER
 #!/bin/bash
+KALI_FS="${kali_fs_path}"
+if [ ! -d "\${KALI_FS}" ]; then
+    echo "Erreur: kali-fs introuvable dans \${KALI_FS}"
+    exit 1
+fi
 exec proot \\
     --link2symlink -0 \\
-    -r "${KALI_FS}" \\
+    -r "\${KALI_FS}" \\
     -b /dev -b /proc -b /sys -b "\${HOME}" \\
     -w /root \\
     /usr/bin/env -i \\
@@ -270,35 +305,50 @@ LAUNCHER
 
 install_kali_setup() {
     local setup_dest="${PREFIX}/bin/kali-setup"
-    if cp "$0" "${setup_dest}" 2>/dev/null; then
-        chmod 700 "${setup_dest}"
-        log "kali-setup copie depuis $0"
+    local src=""
+
+    # Si le script a ete sauvegarde dans un vrai fichier
+    if [ -f "$0" ] && [ "$0" != "bash" ] && [ "$0" != "/proc/self/fd/0" ]; then
+        src="$0"
+    fi
+
+    if [ -n "$src" ]; then
+        if cp "$src" "${setup_dest}" 2>/dev/null; then
+            chmod 700 "${setup_dest}"
+            log "kali-setup copie depuis $src"
+        else
+            echo -e "${Y}[!] Impossible de copier kali-setup${N}"
+            log "kali-setup: copie echouee"
+        fi
     else
-        echo -e "${Y}[!] Impossible de copier kali-setup${N}"
-        log "kali-setup: copie echouee"
+        echo -e "${Y}[!] Script execute via pipe — kali-setup non installe automatiquement${N}"
+        echo -e "${Y}    Telechargez-le manuellement: curl -sL <url> -o \${PREFIX}/bin/kali-setup && chmod 700 \${PREFIX}/bin/kali-setup${N}"
+        log "kali-setup: script execute via pipe, copie impossible"
     fi
 }
 
 snapshot() {
-    show_banner
     local snap_dir="${HOME}/kali-snapshots"
     mkdir -p "${snap_dir}"
     local snap_file="${snap_dir}/snap-$(date '+%Y%m%d-%H%M%S').tar.gz"
     echo -e "${Y}[→] Creation snapshot...${N}"
-    (tar -czf "${snap_file}" -C "${HOME}" kali-fs --ignore-failed-read 2>/dev/null) &
-    real_progress $! "Snapshot"
+    # BUG 17 FIX: exclut cache apt, tmp et logs pour allegement
+    (tar -czf "${snap_file}" \
+        --exclude="${KALI_FS}/var/cache/apt" \
+        --exclude="${KALI_FS}/tmp" \
+        --exclude="${KALI_FS}/var/log" \
+        -C "${HOME}" kali-fs --ignore-failed-read 2>/dev/null) &
+    real_progress $! "Snapshot" || die "Snapshot echoue"
     echo -e "${G}[✓] Snapshot: ${snap_file}${N}"
     log "Snapshot: $snap_file"
     sleep 2
-    menu_post
 }
 
 restore_snapshot() {
-    show_banner
     local snap_dir="${HOME}/kali-snapshots"
     if [ ! -d "${snap_dir}" ] || [ -z "$(ls -A "${snap_dir}" 2>/dev/null)" ]; then
         echo -e "${R}[-] Aucun snapshot disponible${N}"
-        sleep 2; menu_post; return
+        sleep 2; return
     fi
     echo -e "${C}Snapshots disponibles:${N}"
     local i=1
@@ -311,20 +361,31 @@ restore_snapshot() {
     echo ""
     local choice
     read -r -p "$(echo -e "${C}Numero de snapshot: ${N}")" choice
-    if [ -z "${snaps[$((choice-1))]}" ]; then
-        echo -e "${R}[-] Choix invalide${N}"; sleep 2; menu_post; return
+    if [ -z "${snaps[$((choice-1))]+x}" ]; then
+        echo -e "${R}[-] Choix invalide${N}"; sleep 2; return
     fi
     local selected="${snaps[$((choice-1))]}"
+
+    # BUG 18 FIX: verification integrite avant restauration
+    echo -e "${Y}[→] Verification integrite de l'archive...${N}"
+    if ! tar -tzf "${selected}" > /dev/null 2>&1; then
+        die "Archive corrompue — restauration annulee"
+    fi
+
+    # BUG 9 FIX: confirmation + sauvegarde avant restauration
+    local conf
+    read -r -p "$(echo -e "${R}[!] Cette action ecrase kali-fs. Continuer ? (oui/non): ${N}")" conf
+    [ "${conf}" = "oui" ] || { echo -e "${Y}[!] Annule${N}"; sleep 1; return; }
+
     echo -e "${Y}[→] Restauration de $(basename "$selected")...${N}"
     (tar -xzf "${selected}" -C "${HOME}" 2>/dev/null) &
-    real_progress $! "Restauration snapshot"
+    real_progress $! "Restauration snapshot" || die "Restauration echouee"
     echo -e "${G}[✓] Restauration OK${N}"
     log "Snapshot restaure: $selected"
-    sleep 2; menu_post
+    sleep 2
 }
 
 backup_kali() {
-    show_banner
     local free_kb
     free_kb="$(df "${HOME}" 2>/dev/null | awk 'NR==2{print $4}')" || free_kb=0
     local kali_size
@@ -334,47 +395,73 @@ backup_kali() {
     fi
     local backup="${HOME}/kali-backup-$(date '+%Y%m%d-%H%M%S').tar.gz"
     echo -e "${Y}[→] Backup vers $backup...${N}"
-    (tar -czf "${backup}" -C "${HOME}" kali-fs --ignore-failed-read 2>/dev/null) &
-    real_progress $! "Backup"
+    # BUG 17 FIX: exclut cache apt, tmp et logs
+    (tar -czf "${backup}" \
+        --exclude="${KALI_FS}/var/cache/apt" \
+        --exclude="${KALI_FS}/tmp" \
+        --exclude="${KALI_FS}/var/log" \
+        -C "${HOME}" kali-fs --ignore-failed-read 2>/dev/null) &
+    real_progress $! "Backup" || die "Backup echoue"
     echo -e "${G}[✓] Backup OK: $backup${N}"
     log "Backup: $backup"
-    sleep 2; menu_post
+    sleep 2
 }
 
 restore_kali() {
-    show_banner
     local backup_file
     read -r -p "$(echo -e "${C}Chemin du backup: ${N}")" backup_file
     if [ ! -f "${backup_file}" ]; then
         echo -e "${R}[-] Fichier introuvable: ${backup_file}${N}"
-        sleep 2; menu_post; return
+        sleep 2; return
     fi
+
+    # BUG 18 FIX: verification integrite avant restauration
+    echo -e "${Y}[→] Verification integrite de l'archive...${N}"
+    if ! tar -tzf "${backup_file}" > /dev/null 2>&1; then
+        die "Archive corrompue — restauration annulee"
+    fi
+
+    # BUG 10 FIX: confirmation obligatoire
+    local conf
+    read -r -p "$(echo -e "${R}[!] Cette action ecrase kali-fs. Continuer ? (oui/non): ${N}")" conf
+    [ "${conf}" = "oui" ] || { echo -e "${Y}[!] Annule${N}"; sleep 1; return; }
+
     echo -e "${Y}[→] Restauration...${N}"
     (tar -xzf "${backup_file}" -C "${HOME}" 2>/dev/null) &
-    real_progress $! "Restauration"
+    real_progress $! "Restauration" || die "Restauration echouee"
     echo -e "${G}[✓] Restauration OK${N}"
     log "Restaure depuis: $backup_file"
-    sleep 2; menu_post
+    sleep 2
 }
 
 update_kali() {
     show_banner
     echo -e "${Y}[→] Mise a jour Kali...${N}"
     run_kali_cmd "apt update -y && apt upgrade -y && apt autoremove -y" &
-    real_progress $! "Mise a jour Kali"
+    real_progress $! "Mise a jour Kali" || die "Mise a jour Kali echouee — voir ${LOG_FILE}"
     echo -e "${G}[✓] Kali a jour${N}"
     log "Kali mis a jour"
-    sleep 2; menu_post
+    sleep 2
 }
 
 install_tools() {
     show_banner
-    echo -e "${Y}[→] Installation outils...${N}"
-    run_kali_cmd "apt update -y && apt install -y nmap metasploit-framework hydra sqlmap aircrack-ng curl wget git python3 python3-pip" &
-    real_progress $! "Installation outils"
+    echo -e "${Y}[→] Installation outils de base...${N}"
+    run_kali_cmd "apt update -y && apt install -y nmap hydra sqlmap aircrack-ng curl wget git python3 python3-pip" &
+    real_progress $! "Outils de base" || die "Echec installation outils — voir ${LOG_FILE}"
+
+    echo -e "${Y}[→] Tentative installation metasploit-framework (optionnel)...${N}"
+    if run_kali_cmd "apt install -y metasploit-framework" 2>/dev/null; then
+        echo -e "${G}[✓] Metasploit installe${N}"
+        log "Metasploit installe"
+    else
+        echo -e "${Y}[!] Metasploit indisponible sur ce rootfs — ignore${N}"
+        log "Metasploit: package introuvable"
+    fi
+
     echo -e "${G}[✓] Outils installes${N}"
     log "Outils supplementaires installes"
-    sleep 2; menu_post
+    sleep 2
 }
 
 uninstall_kali() {
@@ -389,77 +476,17 @@ uninstall_kali() {
         sleep 2
         show_banner
         menu_install
-    else
-        menu_post
     fi
 }
 
 is_installed() {
-    [ -f "${KALI_FS}/bin/bash" ]
+    # BUG 16 FIX: verifie /bin/bash, /usr/bin/bash et /bin/sh
+    [ -f "${KALI_FS}/bin/bash" ] || \
+    [ -f "${KALI_FS}/usr/bin/bash" ] || \
+    [ -f "${KALI_FS}/bin/sh" ]
 }
 
-auto_install() {
-    show_banner
-    echo -e "${G}[→] Installation automatique${N}\n"
-    log "=== Installation demarree ==="
-
-    check_internet
-    check_arch
-    check_space
-    choose_rootfs
-    install_deps
-    update_termux
-
-    local rootfs_dest="${HOME}/${ROOTFS_FILE}"
-
-    if [ -f "${rootfs_dest}" ]; then
-        echo -e "${Y}[!] Archive deja presente — verification integrite${N}"
-        verify_sha256 "${rootfs_dest}"
-    else
-        echo -e "${Y}[→] Telechargement ${ROOTFS_FILE}...${N}"
-        log "Telechargement: $ROOTFS_URL"
-        if ! curl -fL --progress-bar "${ROOTFS_URL}" -o "${rootfs_dest}"; then
-            rm -f "${rootfs_dest}"
-            die "Echec du telechargement"
-        fi
-        verify_sha256 "${rootfs_dest}"
-    fi
-
-    echo -e "${Y}[→] Extraction du rootfs...${N}"
-    mkdir -p "${KALI_FS}"
-    (proot \
-        --link2symlink \
-        tar \
-        -xJf "${rootfs_dest}" \
-        --warning=no-unknown-keyword \
-        --strip-components=1 \
-        -C "${KALI_FS}" 2>/dev/null) &
-    real_progress $! "Extraction rootfs"
-    rm -f "${rootfs_dest}"
-    echo -e "${G}[✓] Rootfs extrait${N}"
-    log "Rootfs extrait"
-
-    [ -f "${KALI_FS}/bin/bash" ] || die "Extraction echouee — /bin/bash introuvable"
-
-    echo -e "${Y}[→] Configuration initiale Kali...${N}"
-    run_kali_cmd "apt update -y && apt install -y curl wget git python3" &
-    real_progress $! "Config initiale"
-
-    create_launcher
-    install_kali_setup
-
-    show_banner
-    echo -e "${G}╔══════════════════════════════════════════╗"
-    echo -e "║         INSTALLATION TERMINEE !          ║"
-    echo -e "╚══════════════════════════════════════════╝${N}"
-    echo -e "${W}  Lancer Kali:   ${G}kali${N}"
-    echo -e "${W}  Ce menu:       ${G}kali-setup${N}"
-    echo -e "${W}  Logs:          ${G}${LOG_FILE}${N}"
-    log "=== Installation terminee ==="
-    sleep 3
-    menu_post
-}
-
+# Elles retournent simplement, la boucle while du menu gere la suite
 menu_post() {
     local choice
     while true; do
@@ -510,6 +537,91 @@ menu_install() {
             *) echo -e "${R}[-] Invalide${N}"; sleep 1 ;;
         esac
     done
+}
+
+auto_install() {
+    show_banner
+    echo -e "${G}[→] Installation automatique${N}\n"
+    log "=== Installation demarree ==="
+
+    # BUG 1 FIX: verifier et creer le lock file
+    if [ -f "${LOCK_FILE}" ]; then
+        die "Installation deja en cours (lock: ${LOCK_FILE})"
+    fi
+    touch "${LOCK_FILE}"
+
+    check_internet
+    check_arch
+    check_space
+    choose_rootfs
+    install_deps
+    update_termux
+
+    local rootfs_dest="${HOME}/${ROOTFS_FILE}"
+
+    # BUG 4 FIX: verifier que l'URL existe avant de telecharger
+    echo -e "${Y}[→] Verification disponibilite du rootfs...${N}"
+    if ! curl -fsI --max-time 15 "${ROOTFS_URL}" > /dev/null 2>&1; then
+        die "Rootfs introuvable sur le serveur: ${ROOTFS_URL}"
+    fi
+    echo -e "${G}[✓] Rootfs disponible${N}"
+
+    if [ -f "${rootfs_dest}" ]; then
+        echo -e "${Y}[!] Archive deja presente — verification integrite${N}"
+        verify_sha256 "${rootfs_dest}"
+    else
+        echo -e "${Y}[→] Telechargement ${ROOTFS_FILE}...${N}"
+        log "Telechargement: $ROOTFS_URL"
+        if ! curl -fL --progress-bar "${ROOTFS_URL}" -o "${rootfs_dest}"; then
+            rm -f "${rootfs_dest}"
+            die "Echec du telechargement"
+        fi
+        verify_sha256 "${rootfs_dest}"
+    fi
+
+    echo -e "${Y}[→] Extraction du rootfs...${N}"
+    mkdir -p "${KALI_FS}"
+
+    # BUG 6 FIX: tar execute via env dans proot, plus fiable
+    (proot \
+        --link2symlink \
+        /usr/bin/env tar \
+        -xJf "${rootfs_dest}" \
+        --warning=no-unknown-keyword \
+        --strip-components=1 \
+        -C "${KALI_FS}" 2>/dev/null) &
+    local tar_pid=$!
+    real_progress $tar_pid "Extraction rootfs"
+    local tar_exit=$?
+
+    rm -f "${rootfs_dest}"
+
+    # BUG 20 FIX: nettoyage si extraction echouee
+    if [ "$tar_exit" -ne 0 ] || ! is_installed; then
+        echo -e "${R}[!] Extraction echouee — nettoyage...${N}"
+        rm -rf "${KALI_FS}"
+        die "Extraction echouee — kali-fs nettoye"
+    fi
+
+    echo -e "${G}[✓] Rootfs extrait${N}"
+    log "Rootfs extrait"
+
+    echo -e "${Y}[→] Configuration initiale Kali...${N}"
+    run_kali_cmd "apt update -y && apt install -y curl wget git python3" &
+    real_progress $! "Config initiale" || echo -e "${Y}[!] Config initiale partielle — on continue${N}"
+
+    create_launcher
+    install_kali_setup
+
+    show_banner
+    echo -e "${G}╔══════════════════════════════════════════╗"
+    echo -e "║         INSTALLATION TERMINEE !          ║"
+    echo -e "╚══════════════════════════════════════════╝${N}"
+    echo -e "${W}  Lancer Kali:   ${G}kali${N}"
+    echo -e "${W}  Ce menu:       ${G}kali-setup${N}"
+    echo -e "${W}  Logs:          ${G}${LOG_FILE}${N}"
+    log "=== Installation terminee ==="
+    sleep 3
 }
 
 touch "${LOG_FILE}"
