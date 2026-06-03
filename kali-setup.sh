@@ -1005,9 +1005,7 @@ auto_install() {
 
     echo -e "${Y}[→] Extraction du rootfs...${N}"
     mkdir -p "${KALI_FS}"
-    (proot \
-        --link2symlink \
-        /usr/bin/env tar \
+    (tar \
         -xJf "${rootfs_dest}" \
         --warning=no-unknown-keyword \
         --strip-components=1 \
