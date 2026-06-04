@@ -1068,15 +1068,28 @@ auto_install() {
 
     echo -e "  ${Y}[→]${N} Extraction du rootfs..."
     mkdir -p "${KALI_FS}"
+    local tar_exit=0
+    set +e
     tar -xJf "${rootfs_dest}" \
         --warning=no-unknown-keyword \
+        --ignore-failed-read \
         --strip-components=1 \
         -C "${KALI_FS}" 2>/dev/null &
     local tar_pid=$!
-    real_progress $tar_pid "Extraction rootfs" || true
-    wait $tar_pid 2>/dev/null
-    local tar_exit=$?
+    while kill -0 "$tar_pid" 2>/dev/null; do
+        printf "\r  ${Y}⠋${N} ${W}Extraction rootfs${N} ..."
+        sleep 0.09
+    done
+    wait "$tar_pid" 2>/dev/null
+    tar_exit=$?
+    set -e
+    [ "$tar_exit" -eq 1 ] && tar_exit=0
     [ "$tar_exit" -eq 2 ] && tar_exit=0
+    if [ "$tar_exit" -eq 0 ]; then
+        printf "\r  ${G}[✓]${N} ${W}Extraction rootfs${N}          \n"
+    else
+        printf "\r  ${R}[✗]${N} ${W}Extraction rootfs${N} (erreur %d)\n" "$tar_exit"
+    fi
 
     rm -f "${rootfs_dest}"
 
