@@ -471,11 +471,6 @@ run_kali() {
         -b /sys \
         -b "${HOME}" \
         -w /root \
-        /usr/bin/env -i \
-            HOME=/root \
-            TERM="${TERM:-xterm-256color}" \
-            LANG=C.UTF-8 \
-            PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
         /bin/bash --login
 }
 
@@ -487,11 +482,7 @@ run_kali_cmd() {
         -r "${KALI_FS}" \
         -b /dev -b /proc -b /sys -b "${HOME}" \
         -w /root \
-        /usr/bin/env -i \
-            HOME=/root TERM=xterm-256color LANG=C.UTF-8 \
-            DEBIAN_FRONTEND=noninteractive \
-            PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-        /bin/bash --login -c "$cmd" >> "${LOG_FILE}" 2>&1
+        /bin/bash --login -c "export HOME=/root TERM=xterm-256color LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; $cmd" >> "${LOG_FILE}" 2>&1
     return $?
 }
 
@@ -515,9 +506,6 @@ exec proot \\
     -r "\${KALI_FS}" \\
     -b /dev -b /proc -b /sys -b "\${HOME}" \\
     -w /root \\
-    /usr/bin/env -i \\
-        HOME=/root TERM="\${TERM:-xterm-256color}" LANG=C.UTF-8 \\
-        PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \\
     /bin/bash --login
 LAUNCHER
     chmod 700 "${launcher}"
