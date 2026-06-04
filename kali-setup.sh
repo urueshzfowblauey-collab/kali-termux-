@@ -465,7 +465,11 @@ install_deps() {
 
 run_kali() {
     need_cmd proot
-    exec proot \
+    local linker="${KALI_FS}/lib/ld-linux-aarch64.so.1"
+    [ ! -f "$linker" ] && linker="${KALI_FS}/lib/ld-linux-armhf.so.3"
+    [ ! -f "$linker" ] && linker="${KALI_FS}/lib64/ld-linux-x86-64.so.2"
+    [ ! -f "$linker" ] && die "Dynamic linker introuvable dans kali-fs"
+    exec env -i LD_PRELOAD="" proot \
         --link2symlink \
         -0 \
         -r "${KALI_FS}" \
@@ -474,18 +478,24 @@ run_kali() {
         -b /sys \
         -b "${HOME}" \
         -w /root \
-        /bin/bash --login
+        /lib/ld-linux-aarch64.so.1 /bin/bash --login
 }
 
 run_kali_cmd() {
     local cmd="$1"
-    proot \
+    local linker="${KALI_FS}/lib/ld-linux-aarch64.so.1"
+    [ ! -f "$linker" ] && linker="${KALI_FS}/lib/ld-linux-armhf.so.3"
+    [ ! -f "$linker" ] && linker="${KALI_FS}/lib64/ld-linux-x86-64.so.2"
+    [ ! -f "$linker" ] && { log "Dynamic linker introuvable"; return 1; }
+    local lname
+    lname="$(basename "$linker")"
+    env -i LD_PRELOAD="" proot \
         --link2symlink \
         -0 \
         -r "${KALI_FS}" \
         -b /dev -b /proc -b /sys -b "${HOME}" \
         -w /root \
-        /bin/bash --login -c "export HOME=/root TERM=xterm-256color LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; $cmd" >> "${LOG_FILE}" 2>&1
+        "/lib/${lname}" /bin/bash --login -c "export HOME=/root TERM=xterm-256color LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; $cmd" >> "${LOG_FILE}" 2>&1
     return $?
 }
 
@@ -504,12 +514,12 @@ if [ ! -d "\${KALI_FS}" ]; then
     echo "Erreur: kali-fs introuvable dans \${KALI_FS}"
     exit 1
 fi
-exec proot \\
+exec env -i LD_PRELOAD="" proot \\
     --link2symlink -0 \\
     -r "\${KALI_FS}" \\
     -b /dev -b /proc -b /sys -b "\${HOME}" \\
     -w /root \\
-    /bin/bash --login
+    /lib/ld-linux-aarch64.so.1 /bin/bash --login
 LAUNCHER
     chmod 700 "${launcher}"
     log "Launcher cree: $launcher"
