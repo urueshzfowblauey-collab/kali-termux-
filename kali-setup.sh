@@ -13,6 +13,11 @@ THEME="red"
 LANG_CODE="fr"
 KALI_PASSWORD_HASH=""
 KALI_PASSWORD_SALT=""
+KARCH=""
+ROOTFS_TYPE=""
+ROOTFS_FILE=""
+ROOTFS_URL=""
+ROOTFS_URL_FB=""
 
 apply_theme() {
     case "${THEME}" in
@@ -181,7 +186,8 @@ need_cmd_hash() {
 
 do_sha256() {
     local file="$1"
-    local cmd; cmd="$(need_cmd_hash)"
+    local cmd
+    cmd="$(need_cmd_hash)"
     $cmd "$file" | awk '{print $1}'
 }
 
@@ -194,18 +200,20 @@ gen_salt() {
 }
 
 hash_password() {
-    local password="$1"; local salt="$2"
-    local cmd; cmd="$(need_cmd_hash)"
+    local password="$1"
+    local salt="$2"
+    local cmd
+    cmd="$(need_cmd_hash)"
     printf '%s%s' "$salt" "$password" | $cmd | awk '{print $1}'
 }
 
 check_password() {
-    if [ -z "${KALI_PASSWORD_HASH}" ]; then return 0; fi
-    local attempts=0
+    [ -z "${KALI_PASSWORD_HASH}" ] && return 0
+    local attempts=0 input input_hash
     while [ "$attempts" -lt 3 ]; do
         read -r -s -p "$(echo -e "${C}[?] Mot de passe: ${N}")" input <&3
         echo ""
-        local input_hash; input_hash="$(hash_password "$input" "$KALI_PASSWORD_SALT")"
+        input_hash="$(hash_password "$input" "$KALI_PASSWORD_SALT")"
         if [ "$input_hash" = "$KALI_PASSWORD_HASH" ]; then return 0; fi
         attempts=$((attempts + 1))
         echo -e "${R}[-] Mot de passe incorrect ($attempts/3)${N}"
@@ -214,24 +222,29 @@ check_password() {
 }
 
 set_password() {
+    local pw1 pw2 salt hash
     read -r -s -p "$(echo -e "${C}[?] Nouveau mot de passe (vide = desactiver): ${N}")" pw1 <&3
     echo ""
     if [ -z "$pw1" ]; then
-        KALI_PASSWORD_HASH=""; KALI_PASSWORD_SALT=""
+        KALI_PASSWORD_HASH=""
+        KALI_PASSWORD_SALT=""
         save_config
         echo -e "${G}[✓] Mot de passe desactive${N}"
         log "Mot de passe desactive"
-        sleep 1; return
+        sleep 1
+        return
     fi
     read -r -s -p "$(echo -e "${C}[?] Confirmer le mot de passe: ${N}")" pw2 <&3
     echo ""
     if [ "$pw1" != "$pw2" ]; then
         echo -e "${R}[-] Les mots de passe ne correspondent pas${N}"
-        sleep 1; return
+        sleep 1
+        return
     fi
-    local salt; salt="$(gen_salt)"
-    local hash; hash="$(hash_password "$pw1" "$salt")"
-    KALI_PASSWORD_HASH="$hash"; KALI_PASSWORD_SALT="$salt"
+    salt="$(gen_salt)"
+    hash="$(hash_password "$pw1" "$salt")"
+    KALI_PASSWORD_HASH="$hash"
+    KALI_PASSWORD_SALT="$salt"
     save_config
     echo -e "${G}[✓] Mot de passe defini${N}"
     log "Mot de passe mis a jour"
@@ -241,7 +254,6 @@ set_password() {
 print_ascii_color() {
     local DR='\033[38;2;180;0;0m'
     local R1='\033[38;2;215;0;0m'
-    local R2='\033[38;2;240;30;30m'
     local WW='\033[38;2;230;230;230m'
     local NN='\033[0m'
     echo -e "${DR}⠀⠀⠀⠀⠠⠤⠤⠤⠤⠤⣤⣤⣤⣄⣀⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀${NN}"
@@ -276,7 +288,6 @@ vfx_scanlines() {
     )
     local DG='\033[38;2;60;60;60m'
     local DW='\033[38;2;120;120;120m'
-    local GR='\033[38;2;0;200;100m'
     local NN='\033[0m'
     clear
     echo ""
@@ -315,7 +326,6 @@ intro_animation() {
 
     local DR='\033[38;2;100;0;0m'
     local R1='\033[38;2;180;0;0m'
-    local R2='\033[38;2;215;0;0m'
     local WW='\033[38;2;200;200;200m'
     local NN='\033[0m'
 
@@ -414,14 +424,16 @@ check_internet() {
     for url in $urls; do
         if curl -sf --connect-timeout 8 --max-time 12 "$url" > /dev/null 2>&1; then
             echo -e "  ${G}[✓]${N} Connexion internet OK"
-            log "Internet OK via $url"; return 0
+            log "Internet OK via $url"
+            return 0
         fi
     done
     die "Pas de connexion internet"
 }
 
 check_arch() {
-    local raw; raw="$(uname -m)"
+    local raw
+    raw="$(uname -m)"
     case "$raw" in
         aarch64|armv8l|armv8b|aarch64_be|arm64|arm64-v8a) KARCH="arm64" ;;
         armv7l|armv7b|armhf|armv7-a|armv8-a)              KARCH="armhf" ;;
@@ -435,7 +447,8 @@ check_arch() {
 }
 
 check_space() {
-    local free_kb; free_kb="$(df "${HOME}" 2>/dev/null | awk 'NR==2{print $4}')"
+    local free_kb
+    free_kb="$(df "${HOME}" 2>/dev/null | awk 'NR==2{print $4}')"
     if [ -z "$free_kb" ]; then
         echo -e "  ${Y}[!]${N} Impossible de verifier l'espace — on continue"
         return 0
@@ -473,7 +486,9 @@ choose_rootfs() {
 }
 
 verify_sha256() {
-    local file="$1"; local fname; fname="$(basename "$file")"
+    local file="$1"
+    local fname
+    fname="$(basename "$file")"
     echo -e "  ${Y}[→]${N} Verification SHA256..."
     local expected_sha="" sums_content
     for sum_url in "${ROOTFS_URL_BASE}/SHA256SUMS" "${ROOTFS_URL_FALLBACK}/SHA256SUMS"; do
@@ -485,9 +500,11 @@ verify_sha256() {
     done
     if [ -z "$expected_sha" ]; then
         echo -e "  ${Y}[!]${N} SHA256 indisponible — verification ignoree"
-        log "SHA256 non verifie pour $fname"; return 0
+        log "SHA256 non verifie pour $fname"
+        return 0
     fi
-    local actual_sha; actual_sha="$(do_sha256 "$file")"
+    local actual_sha
+    actual_sha="$(do_sha256 "$file")"
     if [ "$expected_sha" = "$actual_sha" ]; then
         echo -e "  ${G}[✓]${N} SHA256 valide"
         log "SHA256 valide: $actual_sha"
@@ -500,7 +517,10 @@ verify_sha256() {
 update_termux() {
     local conf
     read -r -p "$(echo -e "  ${C}[?]${N} Mettre a jour Termux avant installation ? ${W}(oui/non)${N}: ")" conf <&3
-    if [ "${conf}" != "oui" ]; then log "Mise a jour Termux: ignoree"; return 0; fi
+    if [ "${conf}" != "oui" ]; then
+        log "Mise a jour Termux: ignoree"
+        return 0
+    fi
     echo -e "  ${Y}[→]${N} Mise a jour Termux..."
     (pkg update -y && pkg upgrade -y) >> "${LOG_FILE}" 2>&1 &
     real_progress $! "Mise a jour Termux" || echo -e "  ${Y}[!]${N} Mise a jour partielle — on continue"
@@ -518,12 +538,14 @@ run_kali() {
     [ ! -f "$linker" ] && linker="${KALI_FS}/lib/ld-linux-armhf.so.3"
     [ ! -f "$linker" ] && linker="${KALI_FS}/lib64/ld-linux-x86-64.so.2"
     [ ! -f "$linker" ] && die "Dynamic linker introuvable dans kali-fs"
+    local lname
+    lname="$(basename "$linker")"
     exec env -i LD_PRELOAD="" proot \
         --link2symlink -0 \
         -r "${KALI_FS}" \
         -b /dev -b /proc -b /sys -b "${HOME}" \
         -w /root \
-        /lib/ld-linux-aarch64.so.1 /bin/bash --login
+        "/lib/${lname}" /bin/bash --login
 }
 
 run_kali_cmd() {
@@ -532,7 +554,8 @@ run_kali_cmd() {
     [ ! -f "$linker" ] && linker="${KALI_FS}/lib/ld-linux-armhf.so.3"
     [ ! -f "$linker" ] && linker="${KALI_FS}/lib64/ld-linux-x86-64.so.2"
     [ ! -f "$linker" ] && { log "Dynamic linker introuvable"; return 1; }
-    local lname; lname="$(basename "$linker")"
+    local lname
+    lname="$(basename "$linker")"
     env -i LD_PRELOAD="" proot \
         --link2symlink -0 \
         -r "${KALI_FS}" \
@@ -547,7 +570,8 @@ run_kali_cmd() {
 create_launcher() {
     if [ -z "${PREFIX:-}" ]; then
         echo -e "  ${Y}[!]${N} PREFIX non defini — launcher non cree"
-        log "PREFIX non defini — launcher ignore"; return 0
+        log "PREFIX non defini — launcher ignore"
+        return 0
     fi
     local launcher="${PREFIX}/bin/kali"
     local kali_fs_path="${KALI_FS}"
@@ -558,12 +582,17 @@ if [ ! -d "\${KALI_FS}" ]; then
     echo "Erreur: kali-fs introuvable dans \${KALI_FS}"
     exit 1
 fi
+LINKER="\${KALI_FS}/lib/ld-linux-aarch64.so.1"
+[ ! -f "\${LINKER}" ] && LINKER="\${KALI_FS}/lib/ld-linux-armhf.so.3"
+[ ! -f "\${LINKER}" ] && LINKER="\${KALI_FS}/lib64/ld-linux-x86-64.so.2"
+[ ! -f "\${LINKER}" ] && { echo "Erreur: dynamic linker introuvable"; exit 1; }
+LNAME="\$(basename "\${LINKER}")"
 exec env -i LD_PRELOAD="" proot \\
     --link2symlink -0 \\
     -r "\${KALI_FS}" \\
     -b /dev -b /proc -b /sys -b "\${HOME}" \\
     -w /root \\
-    /lib/ld-linux-aarch64.so.1 /bin/bash --login
+    "/lib/\${LNAME}" /bin/bash --login
 LAUNCHER
     chmod 700 "${launcher}"
     log "Launcher cree: $launcher"
@@ -596,17 +625,20 @@ snapshot() {
         -C "${HOME}" kali-fs --ignore-failed-read 2>/dev/null) &
     real_progress $! "Snapshot" || die "Snapshot echoue"
     echo -e "  ${G}[✓]${N} Snapshot: ${W}${snap_file}${N}"
-    log "Snapshot: $snap_file"; sleep 2
+    log "Snapshot: $snap_file"
+    sleep 2
 }
 
 restore_snapshot() {
     local snap_dir="${HOME}/kali-snapshots"
     if [ ! -d "${snap_dir}" ] || [ -z "$(ls -A "${snap_dir}" 2>/dev/null)" ]; then
         echo -e "  ${R}[-]${N} Aucun snapshot disponible"
-        sleep 2; return
+        sleep 2
+        return
     fi
     echo -e "  ${C}Snapshots disponibles:${N}"
-    local i=1; local snaps=()
+    local i=1
+    local snaps=()
     while IFS= read -r -d '' f; do
         snaps+=("$f")
         echo -e "  ${R}[$i]${N} ${W}$(basename "$f")${N}"
@@ -616,7 +648,9 @@ restore_snapshot() {
     local choice
     read -r -p "$(echo -e "  ${C}Numero de snapshot >${N} ")" choice <&3
     if [ -z "${snaps[$((choice-1))]+x}" ]; then
-        echo -e "  ${R}[-]${N} Choix invalide"; sleep 2; return
+        echo -e "  ${R}[-]${N} Choix invalide"
+        sleep 2
+        return
     fi
     local selected="${snaps[$((choice-1))]}"
     if ! tar -tzf "${selected}" > /dev/null 2>&1; then
@@ -629,12 +663,14 @@ restore_snapshot() {
     (tar -xzf "${selected}" -C "${HOME}" 2>/dev/null) &
     real_progress $! "Restauration snapshot" || die "Restauration echouee"
     echo -e "  ${G}[✓]${N} Restauration OK"
-    log "Snapshot restaure: $selected"; sleep 2
+    log "Snapshot restaure: $selected"
+    sleep 2
 }
 
 backup_kali() {
-    local free_kb; free_kb="$(df "${HOME}" 2>/dev/null | awk 'NR==2{print $4}')" || free_kb=0
-    local kali_size; kali_size="$(du -sk "${KALI_FS}" 2>/dev/null | awk '{print $1}')" || kali_size=0
+    local free_kb kali_size
+    free_kb="$(df "${HOME}" 2>/dev/null | awk 'NR==2{print $4}')" || free_kb=0
+    kali_size="$(du -sk "${KALI_FS}" 2>/dev/null | awk '{print $1}')" || kali_size=0
     if [ "$free_kb" -lt "$kali_size" ]; then die "Espace insuffisant pour le backup"; fi
     local backup="${HOME}/kali-backup-$(date '+%Y%m%d-%H%M%S').tar.gz"
     echo -e "  ${Y}[→]${N} Backup vers $backup..."
@@ -645,7 +681,8 @@ backup_kali() {
         -C "${HOME}" kali-fs --ignore-failed-read 2>/dev/null) &
     real_progress $! "Backup" || die "Backup echoue"
     echo -e "  ${G}[✓]${N} Backup: ${W}${backup}${N}"
-    log "Backup: $backup"; sleep 2
+    log "Backup: $backup"
+    sleep 2
 }
 
 restore_kali() {
@@ -653,7 +690,8 @@ restore_kali() {
     read -r -p "$(echo -e "  ${C}Chemin du backup >${N} ")" backup_file <&3
     if [ ! -f "${backup_file}" ]; then
         echo -e "  ${R}[-]${N} Fichier introuvable: ${backup_file}"
-        sleep 2; return
+        sleep 2
+        return
     fi
     if ! tar -tzf "${backup_file}" > /dev/null 2>&1; then
         die "Archive corrompue — restauration annulee"
@@ -665,7 +703,8 @@ restore_kali() {
     (tar -xzf "${backup_file}" -C "${HOME}" 2>/dev/null) &
     real_progress $! "Restauration" || die "Restauration echouee"
     echo -e "  ${G}[✓]${N} Restauration OK"
-    log "Restaure depuis: $backup_file"; sleep 2
+    log "Restaure depuis: $backup_file"
+    sleep 2
 }
 
 update_kali() {
@@ -674,7 +713,8 @@ update_kali() {
     run_kali_cmd "apt update -y && apt upgrade -y && apt autoremove -y" &
     real_progress $! "Mise a jour Kali" || die "Mise a jour Kali echouee — voir ${LOG_FILE}"
     echo -e "  ${G}[✓]${N} Kali a jour"
-    log "Kali mis a jour"; sleep 2
+    log "Kali mis a jour"
+    sleep 2
 }
 
 install_tools() {
@@ -728,7 +768,8 @@ install_tools() {
         *) echo -e "  ${R}[-]${N} Invalide"; sleep 1; return ;;
     esac
     echo -e "\n  ${G}[✓]${N} Termine"
-    log "Outils installes: choix $choice"; sleep 2
+    log "Outils installes: choix $choice"
+    sleep 2
 }
 
 show_stats() {
@@ -745,7 +786,8 @@ show_stats() {
     echo -e "   ${Y}Utilise:${N}  ${W}$(( used_kb / 1024 )) MB${N}"
     echo -e "   ${Y}Libre  :${N}  ${G}$(( free_kb / 1024 )) MB${N}\n"
     if [ -d "${KALI_FS}" ]; then
-        local kali_size; kali_size="$(du -sh "${KALI_FS}" 2>/dev/null | awk '{print $1}')" || kali_size="?"
+        local kali_size
+        kali_size="$(du -sh "${KALI_FS}" 2>/dev/null | awk '{print $1}')" || kali_size="?"
         echo -e "  ${C}Taille kali-fs:${N}  ${W}${kali_size}${N}"
     fi
     local snap_count=0
@@ -766,22 +808,29 @@ clean_cache() {
     run_kali_cmd "apt clean && apt autoremove -y" &
     real_progress $! "Nettoyage cache" || echo -e "  ${Y}[!]${N} Nettoyage partiel"
     echo -e "  ${G}[✓]${N} Cache nettoye"
-    log "Cache apt nettoye"; sleep 2
+    log "Cache apt nettoye"
+    sleep 2
 }
 
 self_update() {
     show_banner
     echo -e "  ${Y}[→]${N} Verification de la mise a jour du script..."
-    local tmp_file; tmp_file="$(mktemp "${HOME}/.kali-setup-new.XXXXXX")"
+    local tmp_file
+    tmp_file="$(mktemp "${HOME}/.kali-setup-new.XXXXXX")"
     if curl -fsSL --max-time 30 "${SCRIPT_URL}" -o "${tmp_file}" 2>/dev/null; then
-        local tmp_size; tmp_size="$(wc -c < "$tmp_file" 2>/dev/null || echo 0)"
+        local tmp_size
+        tmp_size="$(wc -c < "$tmp_file" 2>/dev/null || echo 0)"
         if [ "$tmp_size" -lt 1000 ]; then
             echo -e "  ${R}[-]${N} Fichier telecharge trop petit — mise a jour annulee"
-            rm -f "$tmp_file"; sleep 2; return
+            rm -f "$tmp_file"
+            sleep 2
+            return
         fi
         if ! bash -n "$tmp_file" 2>/dev/null; then
             echo -e "  ${R}[-]${N} Fichier invalide (erreur syntaxe) — mise a jour annulee"
-            rm -f "$tmp_file"; sleep 2; return
+            rm -f "$tmp_file"
+            sleep 2
+            return
         fi
         local new_hash old_hash
         new_hash="$(do_sha256 "$tmp_file")"
@@ -790,12 +839,15 @@ self_update() {
             echo -e "  ${G}[✓]${N} Script deja a jour"
             rm -f "$tmp_file"
         else
-            mv "$tmp_file" "$0"; chmod 700 "$0"
+            mv "$tmp_file" "$0"
+            chmod 700 "$0"
             if [ -n "${PREFIX:-}" ]; then
                 cp "$0" "${PREFIX}/bin/kali-setup" 2>/dev/null || true
             fi
             echo -e "  ${G}[✓]${N} Script mis a jour — relancez kali-setup"
-            log "Script auto-mis a jour"; sleep 2; exec "$0"
+            log "Script auto-mis a jour"
+            sleep 2
+            exec "$0"
         fi
     else
         echo -e "  ${R}[-]${N} Impossible de joindre le serveur"
@@ -839,9 +891,11 @@ menu_theme() {
         1) THEME="red" ;; 2) THEME="blue" ;; 3) THEME="green" ;; 4) THEME="purple" ;;
         *) echo -e "  ${R}[-]${N} Invalide"; sleep 1; return ;;
     esac
-    apply_theme; save_config
+    apply_theme
+    save_config
     echo -e "  ${G}[✓]${N} Theme: ${W}${THEME}${N}"
-    log "Theme: $THEME"; sleep 1
+    log "Theme: $THEME"
+    sleep 1
 }
 
 menu_lang() {
@@ -857,7 +911,8 @@ menu_lang() {
     esac
     save_config
     echo -e "  ${G}[✓]${N} Langue: ${W}${LANG_CODE}${N}"
-    log "Langue: $LANG_CODE"; sleep 1
+    log "Langue: $LANG_CODE"
+    sleep 1
 }
 
 uninstall_kali() {
@@ -871,7 +926,9 @@ uninstall_kali() {
             rm -f "${PREFIX}/bin/kali" "${PREFIX}/bin/kali-setup"
         fi
         echo -e "\n  ${G}[✓]${N} Kali desinstalle"
-        log "Kali desinstalle"; sleep 2; exec "$0"
+        log "Kali desinstalle"
+        sleep 2
+        exec "$0"
     fi
 }
 
@@ -972,7 +1029,9 @@ auto_install() {
         local conf
         read -r -p "$(echo -e "  ${R}[?]${N} Supprimer et reinstaller ? ${W}(oui/non)${N}: ")" conf <&3
         if [ "${conf}" != "oui" ]; then
-            echo -e "  ${Y}[!]${N} Installation annulee"; sleep 1; return
+            echo -e "  ${Y}[!]${N} Installation annulee"
+            sleep 1
+            return
         fi
         rm -rf "${KALI_FS}"
         log "kali-fs existant supprime avant reinstallation"
@@ -983,9 +1042,9 @@ auto_install() {
     local active_url="" sums_main sums_fb
     sums_main="$(curl -fsSL --max-time 15 "${ROOTFS_URL_BASE}/SHA256SUMS" 2>/dev/null | grep -c "${ROOTFS_FILE}" || true)"
     sums_fb="$(curl -fsSL --max-time 15 "${ROOTFS_URL_FALLBACK}/SHA256SUMS" 2>/dev/null | grep -c "${ROOTFS_FILE}" || true)"
-    if [ "${sums_main}" -gt 0 ] 2>/dev/null; then
+    if [ "${sums_main:-0}" -gt 0 ] 2>/dev/null; then
         active_url="${ROOTFS_URL}"
-    elif [ "${sums_fb}" -gt 0 ] 2>/dev/null; then
+    elif [ "${sums_fb:-0}" -gt 0 ] 2>/dev/null; then
         active_url="${ROOTFS_URL_FB}"
         echo -e "  ${Y}[!]${N} Miroir principal indisponible — miroir de secours utilise"
     else
@@ -1001,7 +1060,8 @@ auto_install() {
         echo -e "  ${Y}[→]${N} Telechargement ${ROOTFS_FILE}..."
         log "Telechargement: $active_url"
         if ! curl -fL -C - --progress-bar "${active_url}" -o "${rootfs_dest}"; then
-            rm -f "${rootfs_dest}"; die "Echec du telechargement"
+            rm -f "${rootfs_dest}"
+            die "Echec du telechargement"
         fi
         verify_sha256 "${rootfs_dest}"
     fi
@@ -1021,7 +1081,8 @@ auto_install() {
     rm -f "${rootfs_dest}"
 
     if [ "$tar_exit" -ne 0 ] || ! is_installed; then
-        rm -rf "${KALI_FS}"; die "Extraction echouee — kali-fs nettoye"
+        rm -rf "${KALI_FS}"
+        die "Extraction echouee — kali-fs nettoye"
     fi
 
     verify_rootfs_integrity
@@ -1045,7 +1106,8 @@ auto_install() {
     echo -e "  ${W}Lancer Kali :  ${G}kali${N}"
     echo -e "  ${W}Ce menu     :  ${G}kali-setup${N}"
     echo -e "  ${W}Logs        :  ${G}${LOG_FILE}${N}\n"
-    log "=== Installation terminee ==="; sleep 3
+    log "=== Installation terminee ==="
+    sleep 3
 }
 
 touch "${LOG_FILE}"
@@ -1058,7 +1120,8 @@ check_password
 
 if is_installed; then
     echo -e "  ${G}[✓]${N} Kali Linux detecte"
-    log "Kali detecte dans $KALI_FS"; sleep 1
+    log "Kali detecte dans $KALI_FS"
+    sleep 1
     menu_post
 else
     log "Kali non installe"
