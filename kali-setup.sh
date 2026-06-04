@@ -968,15 +968,20 @@ auto_install() {
 
     echo -e "${Y}[→] Verification disponibilite du rootfs...${N}"
     local active_url=""
-    if curl -fsI --max-time 15 "${ROOTFS_URL}" > /dev/null 2>&1; then
+    echo -e "${Y}[→] Recherche du miroir disponible...${N}"
+    local sums_main sums_fb
+    sums_main="$(curl -fsSL --max-time 15 "${ROOTFS_URL_BASE}/SHA256SUMS" 2>/dev/null | grep -c "${ROOTFS_FILE}" || true)"
+    sums_fb="$(curl -fsSL --max-time 15 "${ROOTFS_URL_FALLBACK}/SHA256SUMS" 2>/dev/null | grep -c "${ROOTFS_FILE}" || true)"
+    if [ "${sums_main}" -gt 0 ] 2>/dev/null; then
         active_url="${ROOTFS_URL}"
-    elif curl -fsI --max-time 15 "${ROOTFS_URL_FB}" > /dev/null 2>&1; then
+    elif [ "${sums_fb}" -gt 0 ] 2>/dev/null; then
         active_url="${ROOTFS_URL_FB}"
         echo -e "${Y}[!] Miroir principal indisponible — miroir de secours utilise${N}"
     else
-        die "Rootfs introuvable: ${ROOTFS_FILE}"
+        active_url="${ROOTFS_URL_FB}"
+        echo -e "${Y}[!] SHA256SUMS inaccessible — tentative sur miroir de secours${N}"
     fi
-    echo -e "${G}[✓] Rootfs disponible${N}"
+    echo -e "${G}[✓] Miroir selectionne${N}"
 
     if [ -f "${rootfs_dest}" ]; then
         echo -e "${Y}[!] Archive deja presente — verification integrite${N}"
