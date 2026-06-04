@@ -419,16 +419,19 @@ verify_sha256() {
     fname="$(basename "$file")"
     echo -e "${Y}[→] Verification SHA256...${N}"
     local expected_sha=""
+    local sums_content
     for sum_url in \
         "${ROOTFS_URL_BASE}/SHA256SUMS" \
-        "${ROOTFS_URL_FALLBACK}/SHA256SUMS" \
-        "${ROOTFS_URL}.sha256sum" \
-        "${ROOTFS_URL_FB}.sha256sum"; do
-        expected_sha="$(curl -fsSL --max-time 10 "$sum_url" 2>/dev/null | grep -E "^[0-9a-f]{64}[[:space:]]+${fname}$" | awk '{print $1}')"
-        [ -n "$expected_sha" ] && break
+        "${ROOTFS_URL_FALLBACK}/SHA256SUMS"; do
+        sums_content="$(curl -fsSL --max-time 15 "$sum_url" 2>/dev/null || true)"
+        if [ -n "$sums_content" ]; then
+            expected_sha="$(printf '%s' "$sums_content" | awk -v f="$fname" '$2==f{print $1}' || true)"
+            [ -n "$expected_sha" ] && break
+        fi
     done
     if [ -z "$expected_sha" ]; then
         echo -e "${Y}[!] SHA256 indisponible — verification ignoree${N}"
+        log "SHA256 non verifie pour $fname"
         return 0
     fi
     local actual_sha
