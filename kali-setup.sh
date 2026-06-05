@@ -2,9 +2,9 @@
 set -euo pipefail
 
 KALI_FS="${HOME}/kali-fs"
-LOG_FILE="${HOME}/kali-setup.log"
-LOCK_FILE="${HOME}/.kali-setup.lock"
-CONFIG_FILE="${HOME}/.kali-setup.conf"
+LOG_FILE="${HOME}/kali-mgr.log"
+LOCK_FILE="${HOME}/.kali-mgr.lock"
+CONFIG_FILE="${HOME}/.kali-mgr.conf"
 ROOTFS_URL_BASE="https://kali.download/nethunter-images/current/rootfs"
 ROOTFS_URL_FALLBACK="https://old.kali.org/nethunter-images/kali-2024.2/rootfs"
 SCRIPT_URL="https://raw.githubusercontent.com/urueshzfowblauey-collab/kali-termux-/main/kali-setup.sh"
@@ -284,7 +284,7 @@ vfx_scanlines() {
         "NET  — Interface reseau operationnelle"
         "SEC  — Module de chiffrement charge"
         "ENV  — Termux environment valide"
-        "RDY  — Demarrage de kali-setup"
+        "RDY  — Demarrage de kali-mgr"
     )
     local DG='\033[38;2;60;60;60m'
     local DW='\033[38;2;120;120;120m'
@@ -532,6 +532,157 @@ install_deps() {
     real_progress $! "Installation dependances" || die "Echec installation dependances"
 }
 
+install_kali_menu() {
+    cat > "${KALI_FS}/root/.kali-menu.sh" << 'KALIMENU'
+#!/bin/bash
+export HOME=/root TERM=xterm-256color LANG=C.UTF-8
+export DEBIAN_FRONTEND=noninteractive
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+R='\033[38;2;215;0;0m'; G='\033[38;2;0;220;100m'; Y='\033[38;2;255;215;0m'
+C='\033[38;2;0;200;180m'; W='\033[1;37m'; N='\033[0m'
+BOLD='\033[1m'; DIM='\033[2m'
+
+print_ascii() {
+    local DR='\033[38;2;180;0;0m'
+    local R1='\033[38;2;215;0;0m'
+    local WW='\033[38;2;230;230;230m'
+    local NN='\033[0m'
+    echo -e "${DR}⠀⠀⠀⠀⠠⠤⠤⠤⠤⠤⣤⣤⣤⣄⣀⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀${NN}"
+    echo -e "${DR}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠛⠛⠿⢶⣤⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀${NN}"
+    echo -e "${R1}⠀⠀⢀⣀⣀⣠⣤⣤⣴⠶⠶⠶⠶⠶⠶⠶⠶⠶⠿⠿⢿⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀${NN}"
+    echo -e "${R1}⠚⠛⠉⠉⠉⠀⠀⠀⠀⠀⠀⢀⣀⣀⣤⡴⠶⠶⠿⠿⠿⣧⡀⠀⠀⠀⠤⢄⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀${NN}"
+    echo -e "${R1}⠀⠀⠀⠀⠀⠀⠀⢀⣠⡴⠞⠛⠉⠁⠀⠀⠀⠀⠀⠀⠀⢸${WW}⣿⣷⣶⣦⣤⣄⣈⡑${R1}⢦⣀⠀⠀⠀⠀⠀⠀⠀⠀${NN}"
+    echo -e "${R1}⠀⠀⠀⠀⣠⠔⠚⠉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀${WW}⣾⡿⠟⠉⠉⠉⠉⠙⠛⠿⣿⣮${R1}⣷⣤⠀⠀⠀⠀⠀⠀${NN}"
+    echo -e "${R1}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀${WW}⣿⡿⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⢻⣯${R1}⣧⡀⠀⠀⠀⠀${NN}"
+    echo -e "${R1}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀${WW}⢸⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠻${R1}⢷⡤⠀⠀⠀${NN}"
+    echo -e "${R1}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀${WW}⠈⢿⣿⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀${R1}⠀⠀⠀${NN}"
+    echo -e "${DR}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀${WW}⠈⠻⣿⣦⣤⣀⡀${DR}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀${NN}"
+    echo -e "${DR}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀${WW}⠉⠙⠛⠛⠻⠿⠿⣿⣶⣶⣦⣄⣀${DR}⠀⠀⠀⠀⠀${NN}"
+    echo -e "${DR}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀${WW}⠉⠻⣿⣯⡛${DR}⠻⢦⡀⠀⠀${NN}"
+    echo -e "${DR}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀${WW}⠈⠙⢿⣆${DR}⠀⠙⢆⠀${NN}"
+    echo -e "${DR}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀${WW}⠈⢻⣆${DR}⠀⠈⢣${NN}"
+    echo -e "${DR}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀${WW}⠻⡆${DR}⠀⠈${NN}"
+    echo -e "${DR}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀${WW}⢻⡀${DR}⠀${NN}"
+    echo -e "${DR}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀${WW}⠈⠃${DR}⠀${NN}"
+}
+
+show_banner() {
+    clear
+    echo ""
+    print_ascii
+    echo ""
+    echo -e "${R}${BOLD}  ╔══════════════════════════════════════════╗${N}"
+    echo -e "${R}${BOLD}  ║       KALI LINUX — TERMUX MANAGER       ║${N}"
+    echo -e "${R}${BOLD}  ║          ${C}creator kyaev${R}                   ║${N}"
+    echo -e "${R}${BOLD}  ╚══════════════════════════════════════════╝${N}"
+    echo ""
+}
+
+spinner() {
+    local pid=$1 label="${2:-Chargement}"
+    local chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏' i=0
+    while kill -0 "$pid" 2>/dev/null; do
+        printf "\r  ${Y}${chars:$((i%${#chars})):1}${N} ${W}%s${N} ..." "$label"
+        sleep 0.09; i=$((i+1))
+    done
+    wait "$pid" 2>/dev/null; local e=$?
+    [ "$e" -eq 0 ] && printf "\r  ${G}[✓]${N} ${W}%s${N}          \n" "$label" \
+                    || printf "\r  ${R}[✗]${N} ${W}%s${N} (err %d)\n" "$label" "$e"
+    return "$e"
+}
+
+menu_tools() {
+    show_banner
+    echo -e "  ${R}${BOLD}╔══════════════════════════════════════════╗${N}"
+    echo -e "  ${R}${BOLD}║           INSTALLER DES OUTILS           ║${N}"
+    echo -e "  ${R}${BOLD}╚══════════════════════════════════════════╝${N}\n"
+    echo -e "  ${R}[1]${N}  ${W}Outils de base${N}  ${Y}nmap hydra sqlmap aircrack-ng git python3${N}"
+    echo -e "  ${R}[2]${N}  ${W}Burp Suite${N}"
+    echo -e "  ${R}[3]${N}  ${W}Wireshark${N}  ${Y}(tshark CLI)${N}"
+    echo -e "  ${R}[4]${N}  ${W}John the Ripper${N}"
+    echo -e "  ${R}[5]${N}  ${W}Hashcat${N}"
+    echo -e "  ${R}[6]${N}  ${W}Metasploit Framework${N}"
+    echo -e "  ${R}[7]${N}  ${W}Tout installer${N}"
+    echo -e "  ${R}[8]${N}  ${W}Retour${N}\n"
+    read -r -p "$(echo -e "  ${C}Choix > ${N}")" ch
+    case "$ch" in
+        1) apt update -y && apt install -y nmap hydra sqlmap aircrack-ng curl wget git python3 python3-pip ;;
+        2) apt update -y && apt install -y burpsuite ;;
+        3) apt update -y && apt install -y tshark ;;
+        4) apt update -y && apt install -y john ;;
+        5) apt update -y && apt install -y hashcat ;;
+        6) apt update -y && apt install -y metasploit-framework ;;
+        7) apt update -y && apt install -y nmap hydra sqlmap aircrack-ng curl wget git python3 python3-pip tshark john hashcat metasploit-framework ;;
+        8) return ;;
+        *) echo -e "  ${R}[-]${N} Invalide" ; sleep 1 ;;
+    esac
+    echo -e "\n  ${G}[✓]${N} Termine"
+    sleep 2
+}
+
+menu_update() {
+    show_banner
+    echo -e "  ${Y}[→]${N} Mise a jour Kali..."
+    apt update -y && apt upgrade -y && apt autoremove -y
+    echo -e "\n  ${G}[✓]${N} Kali a jour"
+    sleep 2
+}
+
+menu_shell() {
+    show_banner
+    echo -e "  ${G}[→]${N} Shell Kali — tape ${Y}exit${N} pour revenir au menu\n"
+    bash
+}
+
+menu_info() {
+    show_banner
+    echo -e "  ${R}${BOLD}╔══════════════════════════════════════════╗${N}"
+    echo -e "  ${R}${BOLD}║             INFORMATIONS                 ║${N}"
+    echo -e "  ${R}${BOLD}╚══════════════════════════════════════════╝${N}\n"
+    echo -e "  ${C}OS       :${N}  ${W}$(cat /etc/os-release 2>/dev/null | grep PRETTY | cut -d= -f2 | tr -d '"')${N}"
+    echo -e "  ${C}Kernel   :${N}  ${W}$(uname -r)${N}"
+    echo -e "  ${C}Arch     :${N}  ${W}$(uname -m)${N}"
+    echo -e "  ${C}Disque   :${N}  ${W}$(df -sh / 2>/dev/null | awk 'NR==2{print $3"/"$2" ("$5" utilise")"}')${N}"
+    echo -e "  ${C}RAM      :${N}  ${W}$(free -m 2>/dev/null | awk 'NR==2{print $3"/"$2" MB"}')${N}"
+    echo ""
+    read -r -p "$(echo -e "  ${C}[ Entree pour continuer ]${N}")" _
+}
+
+menu_clean() {
+    show_banner
+    echo -e "  ${Y}[→]${N} Nettoyage du cache..."
+    apt clean && apt autoremove -y
+    echo -e "  ${G}[✓]${N} Cache nettoye"
+    sleep 2
+}
+
+while true; do
+    show_banner
+    echo -e "  ${R}${BOLD}╔══════════════════════════════════════════╗${N}"
+    echo -e "  ${R}${BOLD}║             KALI LINUX MENU              ║${N}"
+    echo -e "  ${R}${BOLD}╚══════════════════════════════════════════╝${N}\n"
+    echo -e "  ${R}[1]${N}  🛠  ${W}Installer des outils${N}"
+    echo -e "  ${R}[2]${N}  ⟳  ${W}Mettre a jour Kali${N}"
+    echo -e "  ${R}[3]${N}  >_  ${W}Shell Kali (terminal libre)${N}"
+    echo -e "  ${R}[4]${N}  ℹ  ${W}Informations systeme${N}"
+    echo -e "  ${R}[5]${N}  ✦  ${W}Nettoyer le cache${N}"
+    echo -e "  ${R}[6]${N}  ⏻  ${W}Quitter Kali${N}\n"
+    read -r -p "$(echo -e "  ${C}[?] Choix > ${N}")" choice
+    case "$choice" in
+        1) menu_tools ;;
+        2) menu_update ;;
+        3) menu_shell ;;
+        4) menu_info ;;
+        5) menu_clean ;;
+        6) echo -e "\n  ${R}Bye!${N}\n"; exit 0 ;;
+        *) echo -e "  ${R}[-]${N} Invalide"; sleep 1 ;;
+    esac
+done
+KALIMENU
+    chmod +x "${KALI_FS}/root/.kali-menu.sh"
+}
+
 run_kali() {
     need_cmd proot
     local linker="${KALI_FS}/lib/ld-linux-aarch64.so.1"
@@ -540,12 +691,14 @@ run_kali() {
     [ ! -f "$linker" ] && die "Dynamic linker introuvable dans kali-fs"
     local lname
     lname="$(basename "$linker")"
+    install_kali_menu
     exec env -i LD_PRELOAD="" proot \
         --link2symlink -0 \
         -r "${KALI_FS}" \
         -b /dev -b /proc -b /sys -b "${HOME}" \
         -w /root \
-        "/lib/${lname}" /bin/bash --login
+        "/lib/${lname}" /bin/bash --login -c \
+        "export HOME=/root TERM=xterm-256color LANG=C.UTF-8 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; touch ~/.hushlogin; bash /root/.kali-menu.sh"
 }
 
 run_kali_cmd() {
@@ -600,7 +753,7 @@ LAUNCHER
 
 install_kali_setup() {
     if [ -z "${PREFIX:-}" ]; then return 0; fi
-    local setup_dest="${PREFIX}/bin/kali-setup"
+    local setup_dest="${PREFIX}/bin/kali-mgr"
     local src=""
     if [ -f "$0" ] && [ "$0" != "bash" ] && [ "$0" != "/proc/self/fd/0" ]; then
         src="$0"
@@ -608,7 +761,7 @@ install_kali_setup() {
     if [ -n "$src" ]; then
         if cp "$src" "${setup_dest}" 2>/dev/null; then
             chmod 700 "${setup_dest}"
-            log "kali-setup copie depuis $src"
+            log "kali-mgr copie depuis $src"
         fi
     fi
 }
@@ -816,7 +969,7 @@ self_update() {
     show_banner
     echo -e "  ${Y}[→]${N} Verification de la mise a jour du script..."
     local tmp_file
-    tmp_file="$(mktemp "${HOME}/.kali-setup-new.XXXXXX")"
+    tmp_file="$(mktemp "${HOME}/.kali-mgr-new.XXXXXX")"
     if curl -fsSL --max-time 30 "${SCRIPT_URL}" -o "${tmp_file}" 2>/dev/null; then
         local tmp_size
         tmp_size="$(wc -c < "$tmp_file" 2>/dev/null || echo 0)"
@@ -842,9 +995,9 @@ self_update() {
             mv "$tmp_file" "$0"
             chmod 700 "$0"
             if [ -n "${PREFIX:-}" ]; then
-                cp "$0" "${PREFIX}/bin/kali-setup" 2>/dev/null || true
+                cp "$0" "${PREFIX}/bin/kali-mgr" 2>/dev/null || true
             fi
-            echo -e "  ${G}[✓]${N} Script mis a jour — relancez kali-setup"
+            echo -e "  ${G}[✓]${N} Script mis a jour — relancez kali-mgr"
             log "Script auto-mis a jour"
             sleep 2
             exec "$0"
@@ -923,7 +1076,7 @@ uninstall_kali() {
     if [ "${conf}" = "oui" ]; then
         rm -rf "${KALI_FS}"
         if [ -n "${PREFIX:-}" ]; then
-            rm -f "${PREFIX}/bin/kali" "${PREFIX}/bin/kali-setup"
+            rm -f "${PREFIX}/bin/kali" "${PREFIX}/bin/kali-mgr"
         fi
         echo -e "\n  ${G}[✓]${N} Kali desinstalle"
         log "Kali desinstalle"
@@ -1117,14 +1270,14 @@ auto_install() {
     echo -e "  ${G}${BOLD}║       INSTALLATION TERMINEE !            ║${N}"
     echo -e "  ${G}${BOLD}╚══════════════════════════════════════════╝${N}\n"
     echo -e "  ${W}Lancer Kali :  ${G}kali${N}"
-    echo -e "  ${W}Ce menu     :  ${G}kali-setup${N}"
+    echo -e "  ${W}Ce menu     :  ${G}kali-mgr${N}"
     echo -e "  ${W}Logs        :  ${G}${LOG_FILE}${N}\n"
     log "=== Installation terminee ==="
     sleep 3
 }
 
 touch "${LOG_FILE}"
-log "=== kali-setup demarre ==="
+log "=== kali-mgr demarre ==="
 rm -f "${LOCK_FILE}" 2>/dev/null || true
 
 load_config
